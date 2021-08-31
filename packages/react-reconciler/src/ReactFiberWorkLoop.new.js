@@ -1518,12 +1518,22 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes) {
 
 /** @noinline */
 function workLoopConcurrent() {
+  /**
+   * 一直进行调度，直到 workInProgress 为空（即链表结束），或当前帧没有剩余时间
+   */
   // Perform work until Scheduler asks us to yield
   while (workInProgress !== null && !shouldYield()) {
     performUnitOfWork(workInProgress);
   }
 }
 
+/**
+ * 执行当前fiber的任务，并获取下一个fiber的指针
+ * 若下一个fiber指针为空，则停止工作，执行 completeUnitOfWork();
+ * 若不为空，则将 workInProgress 指针指向到下一个fiber，继续回到上面的 workLoopConcurrent() 进行调度
+ * 直到 workInProgress 指针为空 
+ * @param {*} unitOfWork 
+ */
 function performUnitOfWork(unitOfWork: Fiber): void {
   // The current, flushed, state of this fiber is the alternate. Ideally
   // nothing should rely on this, but relying on it here means that we don't
@@ -1552,7 +1562,14 @@ function performUnitOfWork(unitOfWork: Fiber): void {
   ReactCurrentOwner.current = null;
 }
 
+/**
+ * @param {*} unitOfWork 
+ * @returns 
+ */
 function completeUnitOfWork(unitOfWork: Fiber): void {
+  /**
+   * 尝试完成当前工作单元，然后移动到下一个同级单元，若没有其他同级单元，则移动到上级的单元
+   */
   // Attempt to complete the current unit of work, then move to the next
   // sibling. If there are no more siblings, return to the parent fiber.
   let completedWork = unitOfWork;
@@ -1561,7 +1578,7 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
     // nothing should rely on this, but relying on it here means that we don't
     // need an additional field on the work in progress.
     const current = completedWork.alternate;
-    const returnFiber = completedWork.return;
+    const returnFiber = completedWork.return; // 该节点的父级节点
 
     // Check if the work completed or if something threw.
     if ((completedWork.flags & Incomplete) === NoFlags) {
@@ -1628,7 +1645,10 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
       }
     }
 
-    const siblingFiber = completedWork.sibling;
+    /**
+     * 若该节点优先兄弟节点，然后再父级节点
+     */
+    const siblingFiber = completedWork.sibling; // 该节点的下一个兄弟节点
     if (siblingFiber !== null) {
       // If there is more work to do in this returnFiber, do that next.
       workInProgress = siblingFiber;

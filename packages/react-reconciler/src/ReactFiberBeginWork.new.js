@@ -421,6 +421,14 @@ function updateForwardRef(
   return workInProgress.child;
 }
 
+/**
+ * @param {*} current current默认传入一个null
+ * @param {*} workInProgress 
+ * @param {*} Component 
+ * @param {*} nextProps 
+ * @param {*} renderLanes 
+ * @returns 
+ */
 function updateMemoComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -937,6 +945,15 @@ function markRef(current: Fiber | null, workInProgress: Fiber) {
   }
 }
 
+/**
+ * 更新 Function Component
+ * @param {*} current 
+ * @param {*} workInProgress 
+ * @param {*} Component 
+ * @param {*} nextProps 
+ * @param {*} renderLanes 
+ * @returns 
+ */
 function updateFunctionComponent(
   current,
   workInProgress,
