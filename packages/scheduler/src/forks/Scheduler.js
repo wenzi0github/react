@@ -41,6 +41,16 @@ import {
   startLoggingProfilingEvents,
 } from '../SchedulerProfiling';
 
+/**
+ * 该文件是用来进行任务调度的，
+ * 即如何区分每个任务的优先级
+ */
+
+/**
+ * 获取当前的时间（现在距离打开浏览器（或初始化React实例）的时间）
+ * 若存在performance.now()，则使用该函数；
+ * 否则使用Date.now() - 初始时间（初始时间一经产生则该周期内永远不变）；
+ */
 let getCurrentTime;
 const hasPerformanceNow =
   typeof performance === 'object' && typeof performance.now === 'function';
@@ -54,19 +64,23 @@ if (hasPerformanceNow) {
   getCurrentTime = () => localDate.now() - initialTime;
 }
 
+/**
+ * 不同优先级任务的过期时间
+ */
+
 // Max 31 bit integer. The max integer size in V8 for 32-bit systems.
 // Math.pow(2, 30) - 1
 // 0b111111111111111111111111111111
-var maxSigned31BitInt = 1073741823;
+var maxSigned31BitInt = 1073741823; // 31位长度中，最大的整数
 
 // Times out immediately
-var IMMEDIATE_PRIORITY_TIMEOUT = -1;
+var IMMEDIATE_PRIORITY_TIMEOUT = -1; // 最高优的任务，不存在过期时间，应当立即执行
 // Eventually times out
-var USER_BLOCKING_PRIORITY_TIMEOUT = 250;
-var NORMAL_PRIORITY_TIMEOUT = 5000;
-var LOW_PRIORITY_TIMEOUT = 10000;
+var USER_BLOCKING_PRIORITY_TIMEOUT = 250; // 用户阻塞优先级
+var NORMAL_PRIORITY_TIMEOUT = 5000; // 一般的优先级
+var LOW_PRIORITY_TIMEOUT = 10000; // 低优先级
 // Never times out
-var IDLE_PRIORITY_TIMEOUT = maxSigned31BitInt;
+var IDLE_PRIORITY_TIMEOUT = maxSigned31BitInt; // 空闲再执行的优先级，可以认为没有超时时间，可能被永远阻塞不执行
 
 // Tasks are stored on a min heap
 var taskQueue = [];
@@ -87,6 +101,7 @@ var isPerformingWork = false;
 var isHostCallbackScheduled = false;
 var isHostTimeoutScheduled = false;
 
+// 获取本地的api，避免polyfill将其覆盖
 // Capture local references to native APIs, in case a polyfill overrides them.
 const localSetTimeout = typeof setTimeout === 'function' ? setTimeout : null;
 const localClearTimeout =
@@ -94,6 +109,7 @@ const localClearTimeout =
 const localSetImmediate =
   typeof setImmediate !== 'undefined' ? setImmediate : null; // IE and Node.js + jsdom
 
+// https://weekly-geekly-es.imtqy.com/articles/zh-CN451900/index.html
 const isInputPending =
   typeof navigator !== 'undefined' &&
   navigator.scheduling !== undefined &&
