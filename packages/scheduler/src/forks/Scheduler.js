@@ -99,7 +99,7 @@ var currentPriorityLevel = NormalPriority; // 默认当前的优先级为一般�
 // This is set while performing work, to prevent re-entrance.
 var isPerformingWork = false; // 这是在执行工作时设置的，以防止重新进入。
 
-var isHostCallbackScheduled = false;
+var isHostCallbackScheduled = false; // 是否有任务正在被调度（执行中）
 var isHostTimeoutScheduled = false;
 
 // 获取本地的api，避免polyfill将其覆盖
@@ -121,6 +121,12 @@ const isInputPending =
 
 const continuousOptions = {includeContinuous: enableIsInputPendingContinuous};
 
+/**
+ * 检查延迟执行队列里，是否有需要执行的任务，
+ * 有的话，则将其从延迟队列里推出，修改sortIndex为过期时间（在延期执行队列里，sortIndex为startTime）
+ * 然后将其压入到及时任务的队列中
+ * @param {number} currentTime 
+ */
 function advanceTimers(currentTime) {
   // Check for tasks that are no longer delayed and add them to the queue.
   let timer = peek(timerQueue);
@@ -145,23 +151,38 @@ function advanceTimers(currentTime) {
   }
 }
 
+/**
+ * 延迟执行的延时任务，到时间点了，该要执行了
+ * @param {number} currentTime 当前时间点
+ */
 function handleTimeout(currentTime) {
   isHostTimeoutScheduled = false;
+
+  // 根据当前时间点，提取延迟执行的任务到执行队列taskQueue中
   advanceTimers(currentTime);
 
   if (!isHostCallbackScheduled) {
+    // 若没有任务正在执行
     if (peek(taskQueue) !== null) {
+      // 若可执行队列不为空
       isHostCallbackScheduled = true;
       requestHostCallback(flushWork);
     } else {
+      // 可执行队列为空，则判断延迟队列中的数据
       const firstTimer = peek(timerQueue);
       if (firstTimer !== null) {
+        // 若延迟队列不为空
         requestHostTimeout(handleTimeout, firstTimer.startTime - currentTime);
       }
     }
   }
 }
 
+/**
+ * 
+ * @param {*} hasTimeRemaining 
+ * @param {*} initialTime 
+ */
 function flushWork(hasTimeRemaining, initialTime) {
   if (enableProfiling) {
     markSchedulerUnsuspended(initialTime);
@@ -206,7 +227,11 @@ function flushWork(hasTimeRemaining, initialTime) {
 
 function workLoop(hasTimeRemaining, initialTime) {
   let currentTime = initialTime;
+
+  // 将可以执行的延迟任务，放入到执行队列里
   advanceTimers(currentTime);
+
+  // 根据优先级获取第0个可执行任务
   currentTask = peek(taskQueue);
   while (
     currentTask !== null &&
@@ -216,6 +241,8 @@ function workLoop(hasTimeRemaining, initialTime) {
       currentTask.expirationTime > currentTime &&
       (!hasTimeRemaining || shouldYieldToHost())
     ) {
+      // 这个任务还没过期，而且没有剩余时间了或者有了更高优的任务
+      // 这时则需要让出主程
       // This currentTask hasn't expired, and we've reached the deadline.
       break;
     }
@@ -223,6 +250,8 @@ function workLoop(hasTimeRemaining, initialTime) {
     if (typeof callback === 'function') {
       currentTask.callback = null;
       currentPriorityLevel = currentTask.priorityLevel;
+
+      // 该任务是否已过期
       const didUserCallbackTimeout = currentTask.expirationTime <= currentTime;
       if (enableProfiling) {
         markTaskRun(currentTask, currentTime);
@@ -239,20 +268,31 @@ function workLoop(hasTimeRemaining, initialTime) {
           markTaskCompleted(currentTask, currentTime);
           currentTask.isQueued = false;
         }
+        // 若该任务是第0个任务，则将其推出
+        // 好奇怪？这里为什么不直接推出，而是先拿到第0个元素，然后进行比较，然后再推出？
         if (currentTask === peek(taskQueue)) {
           pop(taskQueue);
         }
       }
+      // 从延迟队列里将可以执行的任务放到taskQueue里
       advanceTimers(currentTime);
     } else {
+      // 若不为function类型，则只推出
       pop(taskQueue);
     }
+    // 取出下一个任务
     currentTask = peek(taskQueue);
   }
   // Return whether there's additional work
   if (currentTask !== null) {
+    // 若还存在任务，则返回true
+    // 上面的while循环中，因为当前时间切片剩余时间或者其他高优任务，可能会被打断
+    // 导致有些任务就没执行
     return true;
   } else {
+    // 若taskQueue已执行完毕，则查看延迟队列中是否有数据
+    // 若存在数据，则延迟一定时间后启动该handleTimeout即可
+    // 这个延迟的时间就是该任务的启动时间 - 当前时间
     const firstTimer = peek(timerQueue);
     if (firstTimer !== null) {
       requestHostTimeout(handleTimeout, firstTimer.startTime - currentTime);
@@ -324,7 +364,7 @@ function unstable_wrapCallback(callback) {
 }
 
 /**
- * 根据优先级计算任务的过期时间
+ * 根据优先级计算任务的过期时间，并将其存入对应的队列中
  * @param {ImmediatePriority|UserBlockingPriority|NormalPriority|LowPriority|IdlePriority} priorityLevel 优先级
  * @param {Function} callback 就是我们要执行的任务内容
  * @param {{delay:number}} options
@@ -401,11 +441,14 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
     if (peek(taskQueue) === null && newTask === peek(timerQueue)) {
       // All tasks are delayed, and this is the task with the earliest delay.
       if (isHostTimeoutScheduled) {
+        // 若存在延时任务等待执行，则取消之前等待执行的延迟任务
         // Cancel an existing timeout.
         cancelHostTimeout();
       } else {
+        // 若不存在需要等待执行的延迟任务，则这里添加上标识
         isHostTimeoutScheduled = true;
       }
+      // 延迟调度这个任务
       // Schedule a timeout.
       requestHostTimeout(handleTimeout, startTime - currentTime);
     }
@@ -554,6 +597,7 @@ function requestPaint() {
   // Since we yield every frame regardless, `requestPaint` has no effect.
 }
 
+// 设置时间切片的时间间隔，也可以自行设置
 function forceFrameRate(fps) {
   if (fps < 0 || fps > 125) {
     // Using console['error'] to evade Babel and ESLint
@@ -607,6 +651,12 @@ const performWorkUntilDeadline = () => {
   needsPaint = false;
 };
 
+/**
+ * 启动下一个周期的方法
+ * 1. 优先使用setImmediate
+ * 2. 使用MessgeChannel
+ * 3. setTimeout兜底
+ */
 let schedulePerformWorkUntilDeadline;
 if (typeof localSetImmediate === 'function') {
   // Node.js and old IE.
@@ -640,16 +690,22 @@ if (typeof localSetImmediate === 'function') {
 }
 
 // 在重绘完成后根据线程空闲程度与任务超时时间，在特定的时间执行任务
+// 若有立即要执行的任务，则直接启动下一个时间片的调度
 function requestHostCallback(callback) {
   scheduledHostCallback = callback;
 
   // 若
   if (!isMessageLoopRunning) {
     isMessageLoopRunning = true;
+
+    // 若有立即要执行的任务，则直接启动下一个时间片的调度
     schedulePerformWorkUntilDeadline();
   }
 }
 
+// 若立即执行任务的队列taskQueue为空，而延迟执行队列中有数据，
+// 则这时我们没必要马上启动下一个时间切片来进行调度，毕竟也没那么紧急
+// 这里在一定时间后启动即可
 function requestHostTimeout(callback, ms) {
   taskTimeoutID = localSetTimeout(() => {
     callback(getCurrentTime());
