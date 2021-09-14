@@ -44,6 +44,7 @@ import {
 /**
  * 该文件是用来进行任务调度的，
  * 即如何区分每个任务的优先级
+ * https://juejin.cn/post/6889314677528985614
  */
 
 /**
@@ -60,7 +61,7 @@ if (hasPerformanceNow) {
   getCurrentTime = () => localPerformance.now();
 } else {
   const localDate = Date;
-  const initialTime = localDate.now();
+  const initialTime = localDate.now(); // 创建一个初始时间，用来模拟performance.now()的执行结果
   getCurrentTime = () => localDate.now() - initialTime;
 }
 
@@ -83,8 +84,8 @@ var LOW_PRIORITY_TIMEOUT = 10000; // 低优先级
 var IDLE_PRIORITY_TIMEOUT = maxSigned31BitInt; // 空闲再执行的优先级，可以认为没有超时时间，可能被永远阻塞不执行
 
 // Tasks are stored on a min heap
-var taskQueue = [];
-var timerQueue = [];
+var taskQueue = []; // 存放及时任务的队列
+var timerQueue = []; // 存放延时任务，即 `startTime > currentTime`的任务
 
 // Incrementing id counter. Used to maintain insertion order.
 var taskIdCounter = 1;
@@ -92,11 +93,11 @@ var taskIdCounter = 1;
 // Pausing the scheduler is useful for debugging.
 var isSchedulerPaused = false;
 
-var currentTask = null;
-var currentPriorityLevel = NormalPriority;
+var currentTask = null; // 当前执行的任务
+var currentPriorityLevel = NormalPriority; // 默认当前的优先级为一般优先级（该变量会在全局进行使用，经常会有地方 getCurrentPriorityLevel,就是返回这个值）
 
 // This is set while performing work, to prevent re-entrance.
-var isPerformingWork = false;
+var isPerformingWork = false; // 这是在执行工作时设置的，以防止重新进入。
 
 var isHostCallbackScheduled = false;
 var isHostTimeoutScheduled = false;
@@ -109,7 +110,8 @@ const localClearTimeout =
 const localSetImmediate =
   typeof setImmediate !== 'undefined' ? setImmediate : null; // IE and Node.js + jsdom
 
-// https://weekly-geekly-es.imtqy.com/articles/zh-CN451900/index.html
+// https://juejin.cn/post/6996644324570054664
+// 用来判断是否有需要处理的输入事件（如按键、鼠标、滚轮等），目前在chrome87及以上版本可用
 const isInputPending =
   typeof navigator !== 'undefined' &&
   navigator.scheduling !== undefined &&
@@ -261,18 +263,18 @@ function workLoop(hasTimeRemaining, initialTime) {
 
 function unstable_runWithPriority(priorityLevel, eventHandler) {
   switch (priorityLevel) {
-    case ImmediatePriority:
-    case UserBlockingPriority:
-    case NormalPriority:
-    case LowPriority:
-    case IdlePriority:
+    case ImmediatePriority: // 立即执行的
+    case UserBlockingPriority: // 用户行为
+    case NormalPriority: // 一般优先级
+    case LowPriority: // 低优先级
+    case IdlePriority: // 空闲再执行的
       break;
     default:
-      priorityLevel = NormalPriority;
+      priorityLevel = NormalPriority; // 其他级别的，均认为是一般优先级（NoPriority = 0: 无优先级，	React内部使用：初始化和重置root；用户自定义使用）
   }
 
-  var previousPriorityLevel = currentPriorityLevel;
-  currentPriorityLevel = priorityLevel;
+  var previousPriorityLevel = currentPriorityLevel; // 将当前的优先级进行保存
+  currentPriorityLevel = priorityLevel; // 获取接下来要处理的优先级
 
   try {
     return eventHandler();
@@ -321,9 +323,20 @@ function unstable_wrapCallback(callback) {
   };
 }
 
+/**
+ * 根据优先级计算任务的过期时间
+ * @param {ImmediatePriority|UserBlockingPriority|NormalPriority|LowPriority|IdlePriority} priorityLevel 优先级
+ * @param {Function} callback 就是我们要执行的任务内容
+ * @param {{delay:number}} options
+ * @returns
+ */
 function unstable_scheduleCallback(priorityLevel, callback, options) {
+  // 获取当前时间
   var currentTime = getCurrentTime();
 
+  // 获取该优先级对应的延迟执行的时间
+  // 若设置了延迟时间，则从当前时间进行延后
+  // 否则开始时间就是当前时间
   var startTime;
   if (typeof options === 'object' && options !== null) {
     var delay = options.delay;
@@ -336,44 +349,55 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
     startTime = currentTime;
   }
 
+  // 获取该优先级的超时时间
+  // 优先级越高，则超时时间越短，越需要尽快执行
   var timeout;
   switch (priorityLevel) {
     case ImmediatePriority:
-      timeout = IMMEDIATE_PRIORITY_TIMEOUT;
+      timeout = IMMEDIATE_PRIORITY_TIMEOUT; // 立即执行的任务，超时时间为-1，表示要立刻执行
       break;
     case UserBlockingPriority:
-      timeout = USER_BLOCKING_PRIORITY_TIMEOUT;
+      timeout = USER_BLOCKING_PRIORITY_TIMEOUT; // 用户行为的优先级，超时时间为250
       break;
     case IdlePriority:
-      timeout = IDLE_PRIORITY_TIMEOUT;
+      timeout = IDLE_PRIORITY_TIMEOUT; // 空闲时再执行的优先级，超时时间无限大，若不空闲时可能永远不会执行
       break;
     case LowPriority:
-      timeout = LOW_PRIORITY_TIMEOUT;
+      timeout = LOW_PRIORITY_TIMEOUT; // 10000
       break;
     case NormalPriority:
     default:
-      timeout = NORMAL_PRIORITY_TIMEOUT;
+      timeout = NORMAL_PRIORITY_TIMEOUT; // 5000
       break;
   }
 
-  var expirationTime = startTime + timeout;
+  var expirationTime = startTime + timeout; // 通过开始时间和超时时间，计算出过期时间点
 
+  // 这里会按照id和sortIndex两个属性对任务进行优先级的排序
+  // sortIndex值越小，优先级越高；
+  // id：是任务创建的顺序，id越小，优先级越高
   var newTask = {
-    id: taskIdCounter++,
-    callback,
-    priorityLevel,
-    startTime,
-    expirationTime,
-    sortIndex: -1,
+    id: taskIdCounter++, // 任务节点的序号，创建任务时通过taskIdCounter 自增 1
+    callback, // 	任务函数 执行内容
+    priorityLevel, // 任务的优先级。优先级按 ImmediatePriority、UserBlockingPriority、NormalPriority、LowPriority、IdlePriority 顺序依次越低
+    startTime, // 时间戳，任务预期执行时间，默认为当前时间，即同步任务。可通过 options.delay 设为异步延时任务
+    expirationTime, // 过期时间，scheduler 基于该值进行异步任务的调度。通过 options.timeout 设定或 priorityLevel 计算 timeout 值后，timeout 与 startTime 相加称为 expirationTime
+    sortIndex: -1, // 默认值为 -1。对于异步延时任务，该值将赋为 startTime
   };
   if (enableProfiling) {
     newTask.isQueued = false;
   }
 
   if (startTime > currentTime) {
+    // 若任务的开始时间大于当前时间，说明这是一个延期执行的任务
     // This is a delayed task.
     newTask.sortIndex = startTime;
+
+    // 延期执行的任务，将其压入到timerQueue中
     push(timerQueue, newTask);
+
+    // 若正在执行的任务为空，且当前任务是延期执行任务队列的第1个任务
+    // 则说明所有的任务都被延迟执行了，而且该任务是优先级最高的延迟任务
     if (peek(taskQueue) === null && newTask === peek(timerQueue)) {
       // All tasks are delayed, and this is the task with the earliest delay.
       if (isHostTimeoutScheduled) {
@@ -386,12 +410,17 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
       requestHostTimeout(handleTimeout, startTime - currentTime);
     }
   } else {
+    // 这是一个同步执行的任务
+    // sortIndex为过期时间，按照排序规则，过期时间越短的，则优先执行
     newTask.sortIndex = expirationTime;
     push(taskQueue, newTask);
     if (enableProfiling) {
       markTaskStart(newTask, currentTime);
       newTask.isQueued = true;
     }
+
+    // isHostCallbackScheduled： 是否有主任务正在执行
+    // isPerformingWork: 一个标识,用于确认performWorkUntilDeadline 是否正处于递归的执行状态中
     // Schedule a host callback, if needed. If we're already performing work,
     // wait until the next time we yield.
     if (!isHostCallbackScheduled && !isPerformingWork) {
@@ -438,8 +467,8 @@ function unstable_getCurrentPriorityLevel() {
   return currentPriorityLevel;
 }
 
-let isMessageLoopRunning = false;
-let scheduledHostCallback = null;
+let isMessageLoopRunning = false; // 标志当前消息循环是否开启
+let scheduledHostCallback = null; // 立即执行的任务
 let taskTimeoutID = -1;
 
 // Scheduler periodically yields in case there is other work on the main
@@ -453,14 +482,20 @@ let startTime = -1;
 
 let needsPaint = false;
 
+// 判断是否中断，将主程让给浏览器
 function shouldYieldToHost() {
   const timeElapsed = getCurrentTime() - startTime;
   if (timeElapsed < frameInterval) {
+    // 主线程被阻塞的时间非常短；比单帧小，不用中断
     // The main thread has only been blocked for a really short amount of time;
     // smaller than a single frame. Don't yield yet.
     return false;
   }
 
+  // 主线程被阻塞的时间不可忽略。我们可能需要让出主线程，这样浏览器就可以执行高优先级任务。
+  // 主要是绘画和用户输入。如果有挂起的绘制或挂起的输入，那么我们应该让步。但如果两者都没有，
+  // 那么我们可以在保持反应灵敏的同时减少让步。不管怎样，我们最终都会让步，因为可能有一个
+  // 挂起的绘画没有伴随着对“requestPaint”的调用，或者其他主线程任务，比如网络事件。
   // The main thread has been blocked for a non-negligible amount of time. We
   // may want to yield control of the main thread, so the browser can perform
   // high priority tasks. The main ones are painting and user input. If there's
@@ -471,6 +506,7 @@ function shouldYieldToHost() {
   // like network events.
   if (enableIsInputPending) {
     if (needsPaint) {
+      // 若存在绘制或者用户的输入操作（点击、输入、滚轮等）
       // There's a pending paint (signaled by `requestPaint`). Yield now.
       return true;
     }
@@ -487,6 +523,8 @@ function shouldYieldToHost() {
         return isInputPending(continuousOptions);
       }
     } else {
+      // 我们已经占用主程很长时间了，即使没有待输入要处理，这里可能也有其他我们不知道的工作要处理
+      // 比如网络请求事件，这个时候我们要让出主进程
       // We've blocked the thread for a long time. Even if there's no pending
       // input, there may be some other scheduled work that we don't know about,
       // like a network event. Yield now.
@@ -494,10 +532,15 @@ function shouldYieldToHost() {
     }
   }
 
+  // 若不支持 isInputPending，则超过指定时间后5ms后，让出主线程
   // `isInputPending` isn't available. Yield now.
   return true;
 }
 
+/**
+ * 判断浏览器主程是否存在用户交互行为
+ * https://juejin.cn/post/6996644324570054664
+ */
 function requestPaint() {
   if (
     enableIsInputPending &&
@@ -529,6 +572,7 @@ function forceFrameRate(fps) {
 }
 
 const performWorkUntilDeadline = () => {
+  // 判断`立即执行任务`是否为空
   if (scheduledHostCallback !== null) {
     const currentTime = getCurrentTime();
     // Keep track of the start time so we can measure how long the main thread
@@ -595,8 +639,11 @@ if (typeof localSetImmediate === 'function') {
   };
 }
 
+// 在重绘完成后根据线程空闲程度与任务超时时间，在特定的时间执行任务
 function requestHostCallback(callback) {
   scheduledHostCallback = callback;
+
+  // 若
   if (!isMessageLoopRunning) {
     isMessageLoopRunning = true;
     schedulePerformWorkUntilDeadline();

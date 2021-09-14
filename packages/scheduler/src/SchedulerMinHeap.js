@@ -13,16 +13,31 @@ type Node = {|
   sortIndex: number,
 |};
 
+/**
+ * 往队列中插入数据，然后升序排序，即优先级高的排在前面
+ * @param {Heap} heap 
+ * @param {Node} node 
+ */
 export function push(heap: Heap, node: Node): void {
   const index = heap.length;
   heap.push(node);
   siftUp(heap, node, index);
 }
 
+/**
+ * 获取队列最前面的元素，若队列为空，则返回null
+ * @param {Heap} heap 队列
+ * @returns {Node | null}
+ */
 export function peek(heap: Heap): Node | null {
   return heap.length === 0 ? null : heap[0];
 }
 
+/**
+ * 取出队列最前面的元素
+ * @param {*} heap 
+ * @returns 
+ */
 export function pop(heap: Heap): Node | null {
   if (heap.length === 0) {
     return null;
@@ -36,10 +51,20 @@ export function pop(heap: Heap): Node | null {
   return first;
 }
 
+/**
+ * 插入一个元素，然后按照sortIndex和taskId进行升序，
+ * 即sortIndex和taskId越小，排名越靠前，优先级越高
+ * @param {*} heap 队列
+ * @param {*} node 插入的元素
+ * @param {*} i 现在所在的位置
+ * @returns
+ */
 function siftUp(heap, node, i) {
   let index = i;
+  // 当队列中有多个元素时，则需要排序，升序
+  // 二分查找，然后进行插入
   while (index > 0) {
-    const parentIndex = (index - 1) >>> 1;
+    const parentIndex = (index - 1) >>> 1; // Math.floor((index-1)/2)
     const parent = heap[parentIndex];
     if (compare(parent, node) > 0) {
       // The parent is larger. Swap positions.
@@ -85,6 +110,12 @@ function siftDown(heap, node, i) {
   }
 }
 
+/**
+ * 对两个节点进行比较，优先比较sortIndex，然后再比较taskid
+ * @param {Heap} a
+ * @param {Heap} b
+ * @returns
+ */
 function compare(a, b) {
   // Compare sort index first, then task id.
   const diff = a.sortIndex - b.sortIndex;
