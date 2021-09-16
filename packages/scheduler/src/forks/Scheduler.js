@@ -119,6 +119,9 @@ const isInputPending =
     ? navigator.scheduling.isInputPending.bind(navigator.scheduling)
     : null;
 
+// isInputPending方法默认不包含连续的事件，如mousemove, pointermove等，若想包含这些事件，
+// 则需要设置 includeContinuous 为 true
+// 这里默认为false
 const continuousOptions = {includeContinuous: enableIsInputPendingContinuous};
 
 /**
