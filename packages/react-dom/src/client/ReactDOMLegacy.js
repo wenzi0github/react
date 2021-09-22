@@ -107,6 +107,7 @@ function legacyCreateRootFromDOMContainer(
   container: Container,
   forceHydrate: boolean,
 ): FiberRoot {
+  // 首先清除已存在的内容
   // First clear any existing content.
   if (!forceHydrate) {
     let rootSibling;
@@ -145,6 +146,14 @@ function warnOnInvalidCallback(callback: mixed, callerName: string): void {
   }
 }
 
+/**
+ * 将虚拟dom渲染到container的节点上
+ * @param {*} parentComponent 
+ * @param {*} children ReactDOM.render()或者ReactDOM.hydrate()中的第一个参数，可以理解为根组件。也就是render里的ReactElement对象
+ * @param {*} container 要挂载的真实dom元素容器
+ * @param {*} forceHydrate // true 为 服务端渲染，false为客户端渲染，我们研究的是客户端渲染
+ * @param {*} callback // 渲染完成后执行的回调
+ */
 function legacyRenderSubtreeIntoContainer(
   parentComponent: ?React$Component<any, any>,
   children: ReactNodeList,
@@ -159,6 +168,8 @@ function legacyRenderSubtreeIntoContainer(
 
   let root = container._reactRootContainer;
   let fiberRoot: FiberRoot;
+
+  // 首次加载，root是不存在的，因此进行首次初始化
   if (!root) {
     // Initial mount
     root = container._reactRootContainer = legacyCreateRootFromDOMContainer(

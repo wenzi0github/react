@@ -45,6 +45,7 @@ import {
  * 该文件是用来进行任务调度的，
  * 即如何区分每个任务的优先级
  * https://juejin.cn/post/6889314677528985614
+ * 流程图：https://docs.qq.com/flowchart/DUGp5UUhjRG5CaE9q
  */
 
 /**
