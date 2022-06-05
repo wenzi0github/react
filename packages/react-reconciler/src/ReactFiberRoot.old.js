@@ -93,6 +93,15 @@ function FiberRootNode(containerInfo, tag, hydrate) {
   }
 }
 
+/**
+ * 创建FiberRoot
+ * @param {*} containerInfo 
+ * @param {*} tag 
+ * @param {*} hydrate 
+ * @param {*} hydrationCallbacks 
+ * @param {*} isStrictMode 
+ * @param {*} concurrentUpdatesByDefaultOverride 
+ */
 export function createFiberRoot(
   containerInfo: any,
   tag: RootTag,
@@ -113,6 +122,8 @@ export function createFiberRoot(
     isStrictMode,
     concurrentUpdatesByDefaultOverride,
   );
+
+  // 循环引用！
   root.current = uninitializedFiber;
   uninitializedFiber.stateNode = root;
 
