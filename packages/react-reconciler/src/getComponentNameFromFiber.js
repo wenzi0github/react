@@ -9,6 +9,8 @@
 
 import type {ReactContext, ReactProviderType} from 'shared/ReactTypes';
 
+import {enableLegacyHidden} from 'shared/ReactFeatureFlags';
+
 import {
   FunctionComponent,
   ClassComponent,
@@ -34,6 +36,7 @@ import {
   OffscreenComponent,
   LegacyHiddenComponent,
   CacheComponent,
+  TracingMarkerComponent,
 } from 'react-reconciler/src/ReactWorkTags';
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 import {REACT_STRICT_MODE_TYPE} from 'shared/ReactSymbols';
@@ -85,8 +88,6 @@ export default function getComponentNameFromFiber(fiber: Fiber): string | null {
     case LazyComponent:
       // Name comes from the type in this case; we don't have a tag.
       return getComponentNameFromType(type);
-    case LegacyHiddenComponent:
-      return 'LegacyHidden';
     case Mode:
       if (type === REACT_STRICT_MODE_TYPE) {
         // Don't be less specific than shared/getComponentNameFromType
@@ -103,7 +104,8 @@ export default function getComponentNameFromFiber(fiber: Fiber): string | null {
       return 'Suspense';
     case SuspenseListComponent:
       return 'SuspenseList';
-
+    case TracingMarkerComponent:
+      return 'TracingMarker';
     // The display name for this tags come from the user-provided type:
     case ClassComponent:
     case FunctionComponent:
@@ -118,6 +120,10 @@ export default function getComponentNameFromFiber(fiber: Fiber): string | null {
         return type;
       }
       break;
+    case LegacyHiddenComponent:
+      if (enableLegacyHidden) {
+        return 'LegacyHidden';
+      }
   }
 
   return null;

@@ -31,6 +31,16 @@ async function main() {
 
   await checkNPMPermissions();
 
+  const sha = await getPreviousCommitSha();
+  const [shortCommitLog, formattedCommitLog] = await getCommitLog(sha);
+
+  console.log('');
+  console.log(
+    'This release includes the following commits:',
+    chalk.gray(shortCommitLog)
+  );
+  console.log('');
+
   const releaseType = await getReleaseType();
 
   const path = join(ROOT_PATH, PACKAGE_PATHS[0]);
@@ -38,8 +48,12 @@ async function main() {
   const {major, minor, patch} = semver(previousVersion);
   const nextVersion =
     releaseType === 'minor'
-      ? `${major}.${minor + 1}.${patch}`
+      ? `${major}.${minor + 1}.0`
       : `${major}.${minor}.${patch + 1}`;
+
+  updateChangelog(nextVersion, formattedCommitLog);
+
+  await reviewChangelogPrompt();
 
   updatePackageVersions(previousVersion, nextVersion);
   updateManifestVersions(previousVersion, nextVersion);
@@ -51,13 +65,6 @@ async function main() {
     )} to ${chalk.bold(nextVersion)}`
   );
   console.log('');
-
-  const sha = await getPreviousCommitSha();
-  const commitLog = await getCommitLog(sha);
-
-  updateChangelog(nextVersion, commitLog);
-
-  await reviewChangelogPrompt();
 
   await commitPendingChanges(previousVersion, nextVersion);
 
@@ -89,6 +96,7 @@ async function commitPendingChanges(previousVersion, nextVersion) {
 }
 
 async function getCommitLog(sha) {
+  let shortLog = '';
   let formattedLog = '';
 
   const rawLog = await execRead(`
@@ -103,20 +111,26 @@ async function getCommitLog(sha) {
       const pr = match[2];
 
       formattedLog += `\n* ${title} ([USERNAME](https://github.com/USERNAME) in [#${pr}](${PULL_REQUEST_BASE_URL}${pr}))`;
+      shortLog += `\n* ${title}`;
     } else {
       formattedLog += `\n* ${line}`;
+      shortLog += `\n* ${line}`;
     }
   });
 
-  return formattedLog;
+  return [shortLog, formattedLog];
 }
 
 async function getPreviousCommitSha() {
   const choices = [];
 
   const lines = await execRead(`
-    git log --max-count=5 --topo-order --pretty=format:'%H:::%s:::%as' HEAD -- ${PACKAGE_PATHS[0]}
+    git log --max-count=5 --topo-order --pretty=format:'%H:::%s:::%as' HEAD -- ${join(
+      ROOT_PATH,
+      PACKAGE_PATHS[0]
+    )}
   `);
+
   lines.split('\n').forEach((line, index) => {
     const [hash, message, date] = line.split(':::');
     choices.push({
@@ -200,7 +214,7 @@ function updateChangelog(nextVersion, commitLog) {
     month: 'long',
     day: 'numeric',
   });
-  const header = `## ${nextVersion} (${dateString})`;
+  const header = `---\n\n### ${nextVersion}\n${dateString}`;
 
   const newChangelog = `${beginning}${RELEASE_SCRIPT_TOKEN}\n\n${header}\n${commitLog}${end}`;
 

@@ -1003,11 +1003,15 @@ describe('ReactSuspenseWithNoopRenderer', () => {
   });
 
   // @gate enableCache
-  it('throws a helpful error when an update is suspends without a placeholder', () => {
-    ReactNoop.render(<AsyncText text="Async" />);
-    expect(Scheduler).toFlushAndThrow(
-      'AsyncText suspended while rendering, but no fallback UI was specified.',
-    );
+  it('errors when an update suspends without a placeholder during a sync update', () => {
+    // This is an error because sync/discrete updates are expected to produce
+    // a complete tree immediately to maintain consistency with external state
+    // — we can't delay the commit.
+    expect(() => {
+      ReactNoop.flushSync(() => {
+        ReactNoop.render(<AsyncText text="Async" />);
+      });
+    }).toThrow('A component suspended while responding to synchronous input.');
   });
 
   // @gate enableCache
@@ -1628,7 +1632,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
       });
       expect(root).toMatchRenderedOutput('Loading...');
 
-      // Unmount everying
+      // Unmount everything
       await act(async () => {
         root.render(null);
       });
@@ -2234,7 +2238,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     expect(ReactNoop).toMatchRenderedOutput('Loading...');
   });
 
-  // @gate enableCache
+  // @gate enableCache && enableSuspenseAvoidThisFallback
   it('shows the parent fallback if the inner fallback should be avoided', async () => {
     function Foo({showC}) {
       Scheduler.unstable_yieldValue('Foo');
@@ -2372,7 +2376,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     expect(ReactNoop.getChildren()).toEqual([span('A'), span('Loading B...')]);
   });
 
-  // @gate enableCache
+  // @gate enableCache && enableSuspenseAvoidThisFallback
   it('keeps showing an avoided parent fallback if it is already showing', async () => {
     function Foo({showB}) {
       Scheduler.unstable_yieldValue('Foo');
@@ -2677,7 +2681,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     });
   });
 
-  describe('delays transitions when using React.startTranistion', () => {
+  describe('delays transitions when using React.startTransition', () => {
     // @gate enableCache
     it('top level render', async () => {
       function App({page}) {
@@ -2865,7 +2869,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     });
   });
 
-  // @gate enableCache
+  // @gate enableCache && enableSuspenseAvoidThisFallback
   it('do not show placeholder when updating an avoided boundary with startTransition', async () => {
     function App({page}) {
       return (
@@ -2909,7 +2913,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     );
   });
 
-  // @gate enableCache
+  // @gate enableCache && enableSuspenseAvoidThisFallback
   it('do not show placeholder when mounting an avoided boundary with startTransition', async () => {
     function App({page}) {
       return (
@@ -3069,7 +3073,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     expect(root).toMatchRenderedOutput(<span prop="Foo" />);
   });
 
-  // @gate enableCache
+  // @gate enableCache && enableLegacyHidden
   it('should not render hidden content while suspended on higher pri', async () => {
     function Offscreen() {
       Scheduler.unstable_yieldValue('Offscreen');
@@ -3119,7 +3123,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     );
   });
 
-  // @gate enableCache
+  // @gate enableCache && enableLegacyHidden
   it('should be able to unblock higher pri content before suspended hidden', async () => {
     function Offscreen() {
       Scheduler.unstable_yieldValue('Offscreen');
@@ -3360,7 +3364,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
         // In the expiration times model, once the high pri update suspends,
         // we can't be sure if there's additional work at a lower priority
         // that might unblock the tree. We do know that there's a lower
-        // priority update *somehwere* in the entire root, though (the update
+        // priority update *somewhere* in the entire root, though (the update
         // to the fallback). So we try rendering one more time, just in case.
         // TODO: We shouldn't need to do this with lanes, because we always
         // know exactly which lanes have pending work in each tree.
