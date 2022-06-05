@@ -54,7 +54,9 @@ Adding a root to the tree requires sending 5 numbers:
 1. add operation constant (`1`)
 1. fiber id
 1. element type constant (`11 === ElementTypeRoot`)
-1. profiling supported flag
+1. root has `StrictMode` enabled
+1. supports profiling flag
+1. supports `StrictMode` flag
 1. owner metadata flag
 
 For example, adding a root fiber with an id of 1:
@@ -63,7 +65,9 @@ For example, adding a root fiber with an id of 1:
   1, // add operation
   1, // fiber id
   11, // ElementTypeRoot
+  1, // this root is StrictMode enabled
   1, // this root's renderer supports profiling
+  1, // this root's renderer supports StrictMode
   1, // this root has owner metadata
 ]
 ```
@@ -166,7 +170,7 @@ We only send the serialized messages as part of the `inspectElement` event.
 
 #### Removing a root
 
-Special case of unmounting an entire root (include its decsendants). This specialized message replaces what would otherwise be a series of remove-node operations. It is currently only used in one case: updating component filters. The primary motivation for this is actually to preserve fiber ids for components that are re-added to the tree after the updated filters have been applied. This preserves mappings between the Fiber (id) and things like error and warning logs.
+Special case of unmounting an entire root (include its descendants). This specialized message replaces what would otherwise be a series of remove-node operations. It is currently only used in one case: updating component filters. The primary motivation for this is actually to preserve fiber ids for components that are re-added to the tree after the updated filters have been applied. This preserves mappings between the Fiber (id) and things like error and warning logs.
 
 ```js
 [
@@ -175,6 +179,20 @@ Special case of unmounting an entire root (include its decsendants). This specia
 ```
 
 This operation has no additional payload because renderer and root ids are already sent at the beginning of every operations payload.
+
+#### Setting the mode for a subtree
+
+This message specifies that a subtree operates under a specific mode (e.g. `StrictMode`).
+
+```js
+[
+  7,   // set subtree mode
+  1,   // subtree root fiber id
+  0b01 // mode bitmask
+]
+```
+
+Modes are constant meaning that the modes a subtree mounts with will never change.
 
 ## Reconstructing the tree
 
@@ -253,7 +271,7 @@ Elements can update frequently, especially in response to things like scrolling 
 
 ### Deeply nested properties
 
-Even when dealing with a single component, serializing deeply nested properties can be expensive. Because of this, DevTools uses a technique referred to as "dehyration" to only send a shallow copy of the data on initial inspection. DevTools then fills in the missing data on demand as a user expands nested objects or arrays. Filled in paths are remembered (for the currently inspected element) so they are not "dehyrated" again as part of a polling update.
+Even when dealing with a single component, serializing deeply nested properties can be expensive. Because of this, DevTools uses a technique referred to as "dehydration" to only send a shallow copy of the data on initial inspection. DevTools then fills in the missing data on demand as a user expands nested objects or arrays. Filled in paths are remembered (for the currently inspected element) so they are not "dehydrated" again as part of a polling update.
 
 ### Inspecting hooks
 
@@ -275,11 +293,13 @@ To mitigate the performance impact of re-rendering a component, DevTools does th
 
 ## Profiler
 
-The Profiler UI is a powerful tool for identifying and fixing performance problems. The primary goal of the new profiler is to minimize its impact (CPU usage) while profiling is active. This can be accomplished by:
+DevTools provides a suite of profiling tools for identifying and fixing performance problems. React 16.9+ supports a "legacy" profiler and React 18+ adds the ["timeline" profiler](https://github.com/facebook/react/tree/main/packages/react-devtools-timeline/src) support. These profilers are explained below, but at a high level– the architecture of each profiler aims to minimize the impact (CPU usage) while profiling is active. This can be accomplished by:
 * Minimizing bridge traffic.
 * Making expensive computations lazy.
 
-The majority of profiling information is stored on the backend. The backend push-notifies the frontend of when profiling starts or stops by sending a "_profilingStatus_" message. The frontend also asks for the current status after mounting by sending a "_getProfilingStatus_" message. (This is done to support the reload-and-profile functionality.)
+The majority of profiling information is stored in the DevTools backend. The backend push-notifies the frontend of when profiling starts or stops by sending a "_profilingStatus_" message. The frontend also asks for the current status after mounting by sending a "_getProfilingStatus_" message. (This is done to support the reload-and-profile functionality.)
+
+### Legacy profiler
 
 When profiling begins, the frontend takes a snapshot/copy of each root. This snapshot includes the id, name, key, and child IDs for each node in the tree. (This information is already present on the frontend, so it does not require any additional bridge traffic.) While profiling is active, each time React commits– the frontend also stores a copy of the "_operations_" message (described above). Once profiling has finished, the frontend can use the original snapshot along with each of the stored "_operations_" messages to reconstruct the tree for each of the profiled commits.
 
@@ -290,6 +310,12 @@ When profiling begins, the backend records the base durations of each fiber curr
 
 This information will eventually be required by the frontend in order to render its profiling graphs, but it will not be sent across the bridge until profiling has completed (to minimize the performance impact of profiling).
 
+### Timeline profiler
+
+Timeline profiling data can come from one of two places:
+* The React DevTools backend, which injects a [set of profiling hooks](https://github.com/facebook/react/blob/main/packages/react-devtools-shared/src/backend/profilingHooks.js) that React calls while rendering. When profiling, these hooks store information in memory which gets passed to DevTools when profiling is stopped.
+* A Chrome performance export (JSON) containing React data (as User Timing marks) and other browser data like CPU samples, Network traffic, and native commits. (This method is not as convenient but provides more detailed browser performance data.)
+
 ### Combining profiling data
 
 Once profiling is finished, the frontend requests profiling data from the backend one renderer at a time by sending a "_getProfilingData_" message. The backend responds with a "_profilingData_" message that contains per-root commit timing and duration information. The frontend then combines this information with its own snapshots to form a complete picture of the profiling session. Using this data, charts and graphs are lazily computed (and incrementally cached) on demand, based on which commits and views are selected in the Profiler UI.
@@ -297,3 +323,10 @@ Once profiling is finished, the frontend requests profiling data from the backen
 ### Importing/exporting data
 
 Because all of the data is merged in the frontend after a profiling session is completed, it can be exported and imported (as a single JSON object), enabling profiling sessions to be shared between users.
+
+## Package Specific Details
+
+### Devtools Extension Overview Diagram
+
+![React Devtools Extension](https://user-images.githubusercontent.com/2735514/132768489-6ab85156-b816-442f-9c3f-7af738ee9e49.png)
+

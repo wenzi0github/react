@@ -13,36 +13,31 @@ import {ProfilerContext} from './ProfilerContext';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import {StoreContext} from '../context';
-import {SchedulingProfilerContext} from 'react-devtools-scheduling-profiler/src/SchedulingProfilerContext';
+import {TimelineContext} from 'react-devtools-timeline/src/TimelineContext';
 
 export default function ClearProfilingDataButton() {
   const store = useContext(StoreContext);
-  const {didRecordCommits, isProfiling, selectedTabID} = useContext(
-    ProfilerContext,
-  );
-  const {clearSchedulingProfilerData, schedulingProfilerData} = useContext(
-    SchedulingProfilerContext,
-  );
+  const {didRecordCommits, isProfiling} = useContext(ProfilerContext);
+  const {file, setFile} = useContext(TimelineContext);
   const {profilerStore} = store;
 
-  let doesHaveData = false;
-  if (selectedTabID === 'scheduling-profiler') {
-    doesHaveData = schedulingProfilerData !== null;
-  } else {
-    doesHaveData = didRecordCommits;
-  }
+  const doesHaveInMemoryData = didRecordCommits;
+  const doesHaveUserTimingData = file !== null;
 
   const clear = () => {
-    if (selectedTabID === 'scheduling-profiler') {
-      clearSchedulingProfilerData();
-    } else {
+    if (doesHaveInMemoryData) {
       profilerStore.clear();
+    }
+    if (doesHaveUserTimingData) {
+      setFile(null);
     }
   };
 
   return (
     <Button
-      disabled={isProfiling || !doesHaveData}
+      disabled={
+        isProfiling || !(doesHaveInMemoryData || doesHaveUserTimingData)
+      }
       onClick={clear}
       title="Clear profiling data">
       <ButtonIcon type="clear" />

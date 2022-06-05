@@ -24,6 +24,8 @@ import {
   ElementTypeRoot,
   ElementTypeSuspense,
   ElementTypeSuspenseList,
+  ElementTypeTracingMarker,
+  StrictMode,
 } from 'react-devtools-shared/src/types';
 import {
   deletePathInObject,
@@ -46,12 +48,15 @@ import {
 } from './utils';
 import {
   __DEBUG__,
+  PROFILING_FLAG_BASIC_SUPPORT,
+  PROFILING_FLAG_TIMELINE_SUPPORT,
   SESSION_STORAGE_RELOAD_AND_PROFILE_KEY,
   SESSION_STORAGE_RECORD_CHANGE_DESCRIPTIONS_KEY,
   TREE_OPERATION_ADD,
   TREE_OPERATION_REMOVE,
   TREE_OPERATION_REMOVE_ROOT,
   TREE_OPERATION_REORDER_CHILDREN,
+  TREE_OPERATION_SET_SUBTREE_MODE,
   TREE_OPERATION_UPDATE_ERRORS_OR_WARNINGS,
   TREE_OPERATION_UPDATE_TREE_BASE_DURATION,
 } from '../constants';
@@ -59,6 +64,8 @@ import {inspectHooksOfFiber} from 'react-debug-tools';
 import {
   patch as patchConsole,
   registerRenderer as registerRendererWithConsole,
+  patchForStrictMode as patchConsoleForStrictMode,
+  unpatchForStrictMode as unpatchConsoleForStrictMode,
 } from './console';
 import {
   CONCURRENT_MODE_NUMBER,
@@ -78,12 +85,19 @@ import {
   FORWARD_REF_SYMBOL_STRING,
   MEMO_NUMBER,
   MEMO_SYMBOL_STRING,
+  SERVER_CONTEXT_SYMBOL_STRING,
 } from './ReactSymbols';
 import {format} from './utils';
-import {enableProfilerChangedHookIndices} from 'react-devtools-feature-flags';
+import {
+  enableProfilerChangedHookIndices,
+  enableStyleXFeatures,
+} from 'react-devtools-feature-flags';
 import is from 'shared/objectIs';
-import isArray from 'shared/isArray';
+import hasOwnProperty from 'shared/hasOwnProperty';
+import {getStyleXData} from './StyleX/utils';
+import {createProfilingHooks} from './profilingHooks';
 
+import type {GetTimelineData, ToggleProfilingStatus} from './profilingHooks';
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import type {
   ChangeDescription,
@@ -105,6 +119,7 @@ import type {
 import type {
   ComponentFilter,
   ElementType,
+  Plugins,
 } from 'react-devtools-shared/src/types';
 
 type getDisplayNameForFiberType = (fiber: Fiber) => string | null;
@@ -125,6 +140,7 @@ type ReactTypeOfSideEffectType = {|
   PerformedWork: number,
   Placement: number,
   Incomplete: number,
+  Hydrating: number,
 |};
 
 function getFiberFlags(fiber: Fiber): number {
@@ -146,6 +162,7 @@ export function getInternalReactConstants(
   ReactPriorityLevels: ReactPriorityLevelsType,
   ReactTypeOfSideEffect: ReactTypeOfSideEffectType,
   ReactTypeOfWork: WorkTagMap,
+  StrictModeBits: number,
 |} {
   const ReactTypeOfSideEffect: ReactTypeOfSideEffectType = {
     DidCapture: 0b10000000,
@@ -153,6 +170,7 @@ export function getInternalReactConstants(
     PerformedWork: 0b01,
     Placement: 0b10,
     Incomplete: 0b10000000000000,
+    Hydrating: 0b1000000000000,
   };
 
   // **********************************************************
@@ -180,6 +198,18 @@ export function getInternalReactConstants(
       IdlePriority: 5,
       NoPriority: 0,
     };
+  }
+
+  let StrictModeBits = 0;
+  if (gte(version, '18.0.0-alpha')) {
+    // 18+
+    StrictModeBits = 0b011000;
+  } else if (gte(version, '16.9.0')) {
+    // 16.9 - 17
+    StrictModeBits = 0b1;
+  } else if (gte(version, '16.3.0')) {
+    // 16.3 - 16.8
+    StrictModeBits = 0b10;
   }
 
   let ReactTypeOfWork: WorkTagMap = ((null: any): WorkTagMap);
@@ -218,6 +248,8 @@ export function getInternalReactConstants(
       SimpleMemoComponent: 15,
       SuspenseComponent: 13,
       SuspenseListComponent: 19, // Experimental
+      TracingMarkerComponent: 25, // Experimental - This is technically in 18 but we don't
+      // want to fork again so we're adding it here instead
       YieldComponent: -1, // Removed
     };
   } else if (gte(version, '17.0.0-alpha')) {
@@ -248,6 +280,7 @@ export function getInternalReactConstants(
       SimpleMemoComponent: 15,
       SuspenseComponent: 13,
       SuspenseListComponent: 19, // Experimental
+      TracingMarkerComponent: -1, // Doesn't exist yet
       YieldComponent: -1, // Removed
     };
   } else if (gte(version, '16.6.0-beta.0')) {
@@ -278,6 +311,7 @@ export function getInternalReactConstants(
       SimpleMemoComponent: 15,
       SuspenseComponent: 13,
       SuspenseListComponent: 19, // Experimental
+      TracingMarkerComponent: -1, // Doesn't exist yet
       YieldComponent: -1, // Removed
     };
   } else if (gte(version, '16.4.3-alpha')) {
@@ -308,6 +342,7 @@ export function getInternalReactConstants(
       SimpleMemoComponent: -1, // Doesn't exist yet
       SuspenseComponent: 16,
       SuspenseListComponent: -1, // Doesn't exist yet
+      TracingMarkerComponent: -1, // Doesn't exist yet
       YieldComponent: -1, // Removed
     };
   } else {
@@ -338,6 +373,7 @@ export function getInternalReactConstants(
       SimpleMemoComponent: -1, // Doesn't exist yet
       SuspenseComponent: 16,
       SuspenseListComponent: -1, // Doesn't exist yet
+      TracingMarkerComponent: -1, // Doesn't exist yet
       YieldComponent: 9,
     };
   }
@@ -376,6 +412,7 @@ export function getInternalReactConstants(
     SimpleMemoComponent,
     SuspenseComponent,
     SuspenseListComponent,
+    TracingMarkerComponent,
   } = ReactTypeOfWork;
 
   function resolveFiberType(type: any) {
@@ -420,6 +457,10 @@ export function getInternalReactConstants(
           getDisplayName(resolvedType, 'Anonymous')
         );
       case HostRoot:
+        const fiberRoot = fiber.stateNode;
+        if (fiberRoot != null && fiberRoot._debugRootType !== null) {
+          return fiberRoot._debugRootType;
+        }
         return null;
       case HostComponent:
         return type;
@@ -451,6 +492,8 @@ export function getInternalReactConstants(
         return 'SuspenseList';
       case Profiler:
         return 'Profiler';
+      case TracingMarkerComponent:
+        return 'TracingMarker';
       default:
         const typeSymbol = getTypeSymbol(type);
 
@@ -468,6 +511,7 @@ export function getInternalReactConstants(
             return `${resolvedContext.displayName || 'Context'}.Provider`;
           case CONTEXT_NUMBER:
           case CONTEXT_SYMBOL_STRING:
+          case SERVER_CONTEXT_SYMBOL_STRING:
             // 16.3-16.5 read from "type" because the Consumer is the actual context object.
             // 16.6+ should read from "type._context" because Consumer can be different (in DEV).
             // NOTE Keep in sync with inspectElementRaw()
@@ -499,8 +543,20 @@ export function getInternalReactConstants(
     ReactPriorityLevels,
     ReactTypeOfWork,
     ReactTypeOfSideEffect,
+    StrictModeBits,
   };
 }
+
+// Map of one or more Fibers in a pair to their unique id number.
+// We track both Fibers to support Fast Refresh,
+// which may forcefully replace one of the pair as part of hot reloading.
+// In that case it's still important to be able to locate the previous ID during subsequent renders.
+const fiberToIDMap: Map<Fiber, number> = new Map();
+
+// Map of id to one (arbitrary) Fiber in a pair.
+// This Map is used to e.g. get the display name for a Fiber or schedule an update,
+// operations that should be the same whether the current and work-in-progress Fiber is used.
+const idToArbitraryFiberMap: Map<number, Fiber> = new Map();
 
 export function attach(
   hook: DevToolsHook,
@@ -520,10 +576,11 @@ export function attach(
     ReactPriorityLevels,
     ReactTypeOfWork,
     ReactTypeOfSideEffect,
+    StrictModeBits,
   } = getInternalReactConstants(version);
   const {
     DidCapture,
-    Incomplete,
+    Hydrating,
     NoFlags,
     PerformedWork,
     Placement,
@@ -548,6 +605,7 @@ export function attach(
     SimpleMemoComponent,
     SuspenseComponent,
     SuspenseListComponent,
+    TracingMarkerComponent,
   } = ReactTypeOfWork;
   const {
     ImmediatePriority,
@@ -559,6 +617,8 @@ export function attach(
   } = ReactPriorityLevels;
 
   const {
+    getLaneLabelMap,
+    injectProfilingHooks,
     overrideHookState,
     overrideHookStateDeletePath,
     overrideHookStateRenamePath,
@@ -591,6 +651,24 @@ export function attach(
         return scheduleRefresh(...args);
       }
     };
+  }
+
+  let getTimelineData: null | GetTimelineData = null;
+  let toggleProfilingStatus: null | ToggleProfilingStatus = null;
+  if (typeof injectProfilingHooks === 'function') {
+    const response = createProfilingHooks({
+      getDisplayNameForFiber,
+      getIsProfiling: () => isProfiling,
+      getLaneLabelMap,
+      reactVersion: version,
+    });
+
+    // Pass the Profiling hooks to the reconciler for it to call during render.
+    injectProfilingHooks(response.profilingHooks);
+
+    // Hang onto this toggle so we can notify the external methods of profiling status changes.
+    getTimelineData = response.getTimelineData;
+    toggleProfilingStatus = response.toggleProfilingStatus;
   }
 
   // Tracks Fibers with recently changed number of error/warning messages.
@@ -989,6 +1067,8 @@ export function attach(
         return ElementTypeSuspense;
       case SuspenseListComponent:
         return ElementTypeSuspenseList;
+      case TracingMarkerComponent:
+        return ElementTypeTracingMarker;
       default:
         const typeSymbol = getTypeSymbol(type);
 
@@ -1014,17 +1094,6 @@ export function attach(
         }
     }
   }
-
-  // Map of one or more Fibers in a pair to their unique id number.
-  // We track both Fibers to support Fast Refresh,
-  // which may forcefully replace one of the pair as part of hot reloading.
-  // In that case it's still important to be able to locate the previous ID during subsequent renders.
-  const fiberToIDMap: Map<Fiber, number> = new Map();
-
-  // Map of id to one (arbitrary) Fiber in a pair.
-  // This Map is used to e.g. get the display name for a Fiber or schedule an update,
-  // operations that should be the same whether the current and work-in-progress Fiber is used.
-  const idToArbitraryFiberMap: Map<number, Fiber> = new Map();
 
   // When profiling is supported, we store the latest tree base durations for each Fiber.
   // This is so that we can quickly capture a snapshot of those values if profiling starts.
@@ -1140,6 +1209,13 @@ export function attach(
 
     untrackFibersSet.add(fiber);
 
+    // React may detach alternate pointers during unmount;
+    // Since our untracking code is async, we should explicily track the pending alternate here as well.
+    const alternate = fiber.alternate;
+    if (alternate !== null) {
+      untrackFibersSet.add(alternate);
+    }
+
     if (untrackFibersTimeoutID === null) {
       untrackFibersTimeoutID = setTimeout(untrackFibers, 1000);
     }
@@ -1237,8 +1313,10 @@ export function attach(
 
   function updateContextsForFiber(fiber: Fiber) {
     switch (getElementTypeForFiber(fiber)) {
-      case ElementTypeFunction:
       case ElementTypeClass:
+      case ElementTypeForwardRef:
+      case ElementTypeFunction:
+      case ElementTypeMemo:
         if (idToContextsMap !== null) {
           const id = getFiberIDThrows(fiber);
           const contexts = getContextsForFiber(fiber);
@@ -1276,7 +1354,9 @@ export function attach(
           }
         }
         return [legacyContext, modernContext];
+      case ElementTypeForwardRef:
       case ElementTypeFunction:
+      case ElementTypeMemo:
         const dependencies = fiber.dependencies;
         if (dependencies && dependencies.firstContext) {
           modernContext = dependencies.firstContext;
@@ -1292,11 +1372,19 @@ export function attach(
   // Fibers only store the current context value,
   // so we need to track them separately in order to determine changed keys.
   function crawlToInitializeContextsMap(fiber: Fiber) {
-    updateContextsForFiber(fiber);
-    let current = fiber.child;
-    while (current !== null) {
-      crawlToInitializeContextsMap(current);
-      current = current.sibling;
+    const id = getFiberIDUnsafe(fiber);
+
+    // Not all Fibers in the subtree have mounted yet.
+    // For example, Offscreen (hidden) or Suspense (suspended) subtrees won't yet be tracked.
+    // We can safely skip these subtrees.
+    if (id !== null) {
+      updateContextsForFiber(fiber);
+
+      let current = fiber.child;
+      while (current !== null) {
+        crawlToInitializeContextsMap(current);
+        current = current.sibling;
+      }
     }
   }
 
@@ -1325,12 +1413,18 @@ export function attach(
             }
           }
           break;
+        case ElementTypeForwardRef:
         case ElementTypeFunction:
+        case ElementTypeMemo:
           if (nextModernContext !== NO_CONTEXT) {
             let prevContext = prevModernContext;
             let nextContext = nextModernContext;
 
             while (prevContext && nextContext) {
+              // Note this only works for versions of React that support this key (e.v. 18+)
+              // For older versions, there's no good way to read the current context value after render has completed.
+              // This is because React maintains a stack of context values during render,
+              // but by the time DevTools is called, render has finished and the stack is empty.
               if (!is(prevContext.memoizedValue, nextContext.memoizedValue)) {
                 return true;
               }
@@ -1349,50 +1443,41 @@ export function attach(
     return null;
   }
 
-  function areHookInputsEqual(
-    nextDeps: Array<mixed>,
-    prevDeps: Array<mixed> | null,
-  ) {
-    if (prevDeps === null) {
+  function isHookThatCanScheduleUpdate(hookObject: any) {
+    const queue = hookObject.queue;
+    if (!queue) {
       return false;
     }
 
-    for (let i = 0; i < prevDeps.length && i < nextDeps.length; i++) {
-      if (is(nextDeps[i], prevDeps[i])) {
-        continue;
-      }
-      return false;
-    }
-    return true;
+    const boundHasOwnProperty = hasOwnProperty.bind(queue);
+
+    // Detect the shape of useState() or useReducer()
+    // using the attributes that are unique to these hooks
+    // but also stable (e.g. not tied to current Lanes implementation)
+    const isStateOrReducer =
+      boundHasOwnProperty('pending') &&
+      boundHasOwnProperty('dispatch') &&
+      typeof queue.dispatch === 'function';
+
+    // Detect useSyncExternalStore()
+    const isSyncExternalStore =
+      boundHasOwnProperty('value') &&
+      boundHasOwnProperty('getSnapshot') &&
+      typeof queue.getSnapshot === 'function';
+
+    // These are the only types of hooks that can schedule an update.
+    return isStateOrReducer || isSyncExternalStore;
   }
 
-  function isEffect(memoizedState) {
-    if (memoizedState === null || typeof memoizedState !== 'object') {
-      return false;
-    }
-    const {deps} = memoizedState;
-    const hasOwnProperty = Object.prototype.hasOwnProperty.bind(memoizedState);
-    return (
-      hasOwnProperty('create') &&
-      hasOwnProperty('destroy') &&
-      hasOwnProperty('deps') &&
-      hasOwnProperty('next') &&
-      hasOwnProperty('tag') &&
-      (deps === null || isArray(deps))
-    );
-  }
-
-  function didHookChange(prev: any, next: any): boolean {
+  function didStatefulHookChange(prev: any, next: any): boolean {
     const prevMemoizedState = prev.memoizedState;
     const nextMemoizedState = next.memoizedState;
 
-    if (isEffect(prevMemoizedState) && isEffect(nextMemoizedState)) {
-      return (
-        prevMemoizedState !== nextMemoizedState &&
-        !areHookInputsEqual(nextMemoizedState.deps, prevMemoizedState.deps)
-      );
+    if (isHookThatCanScheduleUpdate(prev)) {
+      return prevMemoizedState !== nextMemoizedState;
     }
-    return nextMemoizedState !== prevMemoizedState;
+
+    return false;
   }
 
   function didHooksChange(prev: any, next: any): boolean {
@@ -1408,7 +1493,7 @@ export function attach(
       next.hasOwnProperty('queue')
     ) {
       while (next !== null) {
-        if (didHookChange(prev, next)) {
+        if (didStatefulHookChange(prev, next)) {
           return true;
         } else {
           next = next.next;
@@ -1435,7 +1520,7 @@ export function attach(
         next.hasOwnProperty('queue')
       ) {
         while (next !== null) {
-          if (didHookChange(prev, next)) {
+          if (didStatefulHookChange(prev, next)) {
             indices.push(index);
           }
           next = next.next;
@@ -1485,6 +1570,7 @@ export function attach(
       case ContextConsumer:
       case MemoComponent:
       case SimpleMemoComponent:
+      case ForwardRef:
         // For types that execute user code, we check PerformedWork effect.
         // We don't reflect bailouts (either referential or sCU) in DevTools.
         // eslint-disable-next-line no-bitwise
@@ -1504,11 +1590,16 @@ export function attach(
 
   type OperationsArray = Array<number>;
 
+  type StringTableEntry = {|
+    encodedString: Array<number>,
+    id: number,
+  |};
+
   const pendingOperations: OperationsArray = [];
   const pendingRealUnmountedIDs: Array<number> = [];
   const pendingSimulatedUnmountedIDs: Array<number> = [];
   let pendingOperationsQueue: Array<OperationsArray> | null = [];
-  const pendingStringTable: Map<string, number> = new Map();
+  const pendingStringTable: Map<string, StringTableEntry> = new Map();
   let pendingStringTableLength: number = 0;
   let pendingUnmountedRootID: number | null = null;
 
@@ -1524,7 +1615,29 @@ export function attach(
     pendingOperations.push(op);
   }
 
+  function shouldBailoutWithPendingOperations() {
+    if (isProfiling) {
+      if (
+        currentCommitProfilingMetadata != null &&
+        currentCommitProfilingMetadata.durations.length > 0
+      ) {
+        return false;
+      }
+    }
+
+    return (
+      pendingOperations.length === 0 &&
+      pendingRealUnmountedIDs.length === 0 &&
+      pendingSimulatedUnmountedIDs.length === 0 &&
+      pendingUnmountedRootID === null
+    );
+  }
+
   function flushOrQueueOperations(operations: OperationsArray): void {
+    if (shouldBailoutWithPendingOperations()) {
+      return;
+    }
+
     if (pendingOperationsQueue !== null) {
       pendingOperationsQueue.push(operations);
     } else {
@@ -1555,7 +1668,7 @@ export function attach(
 
       recordPendingErrorsAndWarnings();
 
-      if (pendingOperations.length === 0) {
+      if (shouldBailoutWithPendingOperations()) {
         // No warnings or errors to flush; we can bail out early here too.
         return;
       }
@@ -1678,12 +1791,7 @@ export function attach(
     // We do this just before flushing, so we can ignore errors for no-longer-mounted Fibers.
     recordPendingErrorsAndWarnings();
 
-    if (
-      pendingOperations.length === 0 &&
-      pendingRealUnmountedIDs.length === 0 &&
-      pendingSimulatedUnmountedIDs.length === 0 &&
-      pendingUnmountedRootID === null
-    ) {
+    if (shouldBailoutWithPendingOperations()) {
       // If we aren't profiling, we can just bail out here.
       // No use sending an empty update over the bridge.
       //
@@ -1692,9 +1800,7 @@ export function attach(
       // (2) the operations array for each commit
       // Because of this, it's important that the operations and metadata arrays align,
       // So it's important not to omit even empty operations while profiling is active.
-      if (!isProfiling) {
-        return;
-      }
+      return;
     }
 
     const numUnmountIDs =
@@ -1726,13 +1832,19 @@ export function attach(
     // Now fill in the string table.
     // [stringTableLength, str1Length, ...str1, str2Length, ...str2, ...]
     operations[i++] = pendingStringTableLength;
-    pendingStringTable.forEach((value, key) => {
-      operations[i++] = key.length;
-      const encodedKey = utfEncodeString(key);
-      for (let j = 0; j < encodedKey.length; j++) {
-        operations[i + j] = encodedKey[j];
+    pendingStringTable.forEach((entry, stringKey) => {
+      const encodedString = entry.encodedString;
+
+      // Don't use the string length.
+      // It won't work for multibyte characters (like emoji).
+      const length = encodedString.length;
+
+      operations[i++] = length;
+      for (let j = 0; j < length; j++) {
+        operations[i + j] = encodedString[j];
       }
-      i += key.length;
+
+      i += length;
     });
 
     if (numUnmountIDs > 0) {
@@ -1779,21 +1891,31 @@ export function attach(
     pendingStringTableLength = 0;
   }
 
-  function getStringID(str: string | null): number {
-    if (str === null) {
+  function getStringID(string: string | null): number {
+    if (string === null) {
       return 0;
     }
-    const existingID = pendingStringTable.get(str);
-    if (existingID !== undefined) {
-      return existingID;
+    const existingEntry = pendingStringTable.get(string);
+    if (existingEntry !== undefined) {
+      return existingEntry.id;
     }
-    const stringID = pendingStringTable.size + 1;
-    pendingStringTable.set(str, stringID);
-    // The string table total length needs to account
-    // both for the string length, and for the array item
-    // that contains the length itself. Hence + 1.
-    pendingStringTableLength += str.length + 1;
-    return stringID;
+
+    const id = pendingStringTable.size + 1;
+    const encodedString = utfEncodeString(string);
+
+    pendingStringTable.set(string, {
+      encodedString,
+      id,
+    });
+
+    // The string table total length needs to account both for the string length,
+    // and for the array item that contains the length itself.
+    //
+    // Don't use string length for this table.
+    // It won't work for multibyte characters (like emoji).
+    pendingStringTableLength += encodedString.length + 1;
+
+    return id;
   }
 
   function recordMount(fiber: Fiber, parentFiber: Fiber | null) {
@@ -1807,11 +1929,23 @@ export function attach(
     const hasOwnerMetadata = fiber.hasOwnProperty('_debugOwner');
     const isProfilingSupported = fiber.hasOwnProperty('treeBaseDuration');
 
+    // Adding a new field here would require a bridge protocol version bump (a backwads breaking change).
+    // Instead let's re-purpose a pre-existing field to carry more information.
+    let profilingFlags = 0;
+    if (isProfilingSupported) {
+      profilingFlags = PROFILING_FLAG_BASIC_SUPPORT;
+      if (typeof injectProfilingHooks === 'function') {
+        profilingFlags |= PROFILING_FLAG_TIMELINE_SUPPORT;
+      }
+    }
+
     if (isRoot) {
       pushOperation(TREE_OPERATION_ADD);
       pushOperation(id);
       pushOperation(ElementTypeRoot);
-      pushOperation(isProfilingSupported ? 1 : 0);
+      pushOperation((fiber.mode & StrictModeBits) !== 0 ? 1 : 0);
+      pushOperation(profilingFlags);
+      pushOperation(StrictModeBits !== 0 ? 1 : 0);
       pushOperation(hasOwnerMetadata ? 1 : 0);
 
       if (isProfiling) {
@@ -1838,7 +1972,7 @@ export function attach(
 
       // This check is a guard to handle a React element that has been modified
       // in such a way as to bypass the default stringification of the "key" property.
-      const keyString = key === null ? null : '' + key;
+      const keyString = key === null ? null : String(key);
       const keyStringID = getStringID(keyString);
 
       pushOperation(TREE_OPERATION_ADD);
@@ -1848,6 +1982,16 @@ export function attach(
       pushOperation(ownerID);
       pushOperation(displayNameStringID);
       pushOperation(keyStringID);
+
+      // If this subtree has a new mode, let the frontend know.
+      if (
+        (fiber.mode & StrictModeBits) !== 0 &&
+        (((parentFiber: any): Fiber).mode & StrictModeBits) === 0
+      ) {
+        pushOperation(TREE_OPERATION_SET_SUBTREE_MODE);
+        pushOperation(id);
+        pushOperation(StrictMode);
+      }
     }
 
     if (isProfilingSupported) {
@@ -2479,11 +2623,17 @@ export function attach(
 
   function getUpdatersList(root): Array<SerializedElement> | null {
     return root.memoizedUpdaters != null
-      ? Array.from(root.memoizedUpdaters).map(fiberToSerializedElement)
+      ? Array.from(root.memoizedUpdaters)
+          .filter(fiber => getFiberIDUnsafe(fiber) !== null)
+          .map(fiberToSerializedElement)
       : null;
   }
 
   function handleCommitFiberUnmount(fiber) {
+    // Flush any pending Fibers that we are untracking before processing the new commit.
+    // If we don't do this, we might end up double-deleting Fibers in some cases (like Legacy Suspense).
+    untrackFibers();
+
     // This is not recursive.
     // We can't traverse fibers after unmounting so instead
     // we rely on React telling us about each unmount.
@@ -2549,9 +2699,14 @@ export function attach(
       // TODO: relying on this seems a bit fishy.
       const wasMounted =
         alternate.memoizedState != null &&
-        alternate.memoizedState.element != null;
+        alternate.memoizedState.element != null &&
+        // A dehydrated root is not considered mounted
+        alternate.memoizedState.isDehydrated !== true;
       const isMounted =
-        current.memoizedState != null && current.memoizedState.element != null;
+        current.memoizedState != null &&
+        current.memoizedState.element != null &&
+        // A dehydrated root is not considered mounted
+        current.memoizedState.isDehydrated !== true;
       if (!wasMounted && isMounted) {
         // Mount a new root.
         setRootPseudoKey(currentRootID, current);
@@ -2571,18 +2726,21 @@ export function attach(
     }
 
     if (isProfiling && isProfilingSupported) {
-      const commitProfilingMetadata = ((rootToCommitProfilingMetadataMap: any): CommitProfilingMetadataMap).get(
-        currentRootID,
-      );
-      if (commitProfilingMetadata != null) {
-        commitProfilingMetadata.push(
-          ((currentCommitProfilingMetadata: any): CommitProfilingData),
-        );
-      } else {
-        ((rootToCommitProfilingMetadataMap: any): CommitProfilingMetadataMap).set(
+      if (!shouldBailoutWithPendingOperations()) {
+        const commitProfilingMetadata = ((rootToCommitProfilingMetadataMap: any): CommitProfilingMetadataMap).get(
           currentRootID,
-          [((currentCommitProfilingMetadata: any): CommitProfilingData)],
         );
+
+        if (commitProfilingMetadata != null) {
+          commitProfilingMetadata.push(
+            ((currentCommitProfilingMetadata: any): CommitProfilingData),
+          );
+        } else {
+          ((rootToCommitProfilingMetadataMap: any): CommitProfilingMetadataMap).set(
+            currentRootID,
+            [((currentCommitProfilingMetadata: any): CommitProfilingData)],
+          );
+        }
       }
     }
 
@@ -2676,51 +2834,33 @@ export function attach(
     return null;
   }
 
-  const MOUNTING = 1;
-  const MOUNTED = 2;
-  const UNMOUNTED = 3;
+  // This function is copied from React and should be kept in sync:
+  // https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberTreeReflection.js
+  function assertIsMounted(fiber) {
+    if (getNearestMountedFiber(fiber) !== fiber) {
+      throw new Error('Unable to find node on an unmounted component.');
+    }
+  }
 
   // This function is copied from React and should be kept in sync:
   // https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberTreeReflection.js
-  function isFiberMountedImpl(fiber: Fiber): number {
+  function getNearestMountedFiber(fiber: Fiber): null | Fiber {
     let node = fiber;
-    let prevNode = null;
+    let nearestMounted = fiber;
     if (!fiber.alternate) {
       // If there is no alternate, this might be a new tree that isn't inserted
       // yet. If it is, then it will have a pending insertion effect on it.
-      if ((getFiberFlags(node) & Placement) !== NoFlags) {
-        return MOUNTING;
-      }
-      // This indicates an error during render.
-      if ((getFiberFlags(node) & Incomplete) !== NoFlags) {
-        return UNMOUNTED;
-      }
-      while (node.return) {
-        prevNode = node;
-        node = node.return;
-
-        if ((getFiberFlags(node) & Placement) !== NoFlags) {
-          return MOUNTING;
+      let nextNode = node;
+      do {
+        node = nextNode;
+        if ((node.flags & (Placement | Hydrating)) !== NoFlags) {
+          // This is an insertion or in-progress hydration. The nearest possible
+          // mounted fiber is the parent but we need to continue to figure out
+          // if that one is still mounted.
+          nearestMounted = node.return;
         }
-        // This indicates an error during render.
-        if ((getFiberFlags(node) & Incomplete) !== NoFlags) {
-          return UNMOUNTED;
-        }
-
-        // If this node is inside of a timed out suspense subtree, we should also ignore errors/warnings.
-        const isTimedOutSuspense =
-          node.tag === SuspenseComponent && node.memoizedState !== null;
-        if (isTimedOutSuspense) {
-          // Note that this does not include errors/warnings in the Fallback tree though!
-          const primaryChildFragment = node.child;
-          const fallbackChildFragment = primaryChildFragment
-            ? primaryChildFragment.sibling
-            : null;
-          if (prevNode !== fallbackChildFragment) {
-            return UNMOUNTED;
-          }
-        }
-      }
+        nextNode = node.return;
+      } while (nextNode);
     } else {
       while (node.return) {
         node = node.return;
@@ -2729,11 +2869,11 @@ export function attach(
     if (node.tag === HostRoot) {
       // TODO: Check if this was a nested HostRoot when used with
       // renderContainerIntoSubtree.
-      return MOUNTED;
+      return nearestMounted;
     }
     // If we didn't hit the root, that means that we're in an disconnected tree
     // that has been unmounted.
-    return UNMOUNTED;
+    return null;
   }
 
   // This function is copied from React and should be kept in sync:
@@ -2750,11 +2890,13 @@ export function attach(
     const alternate = fiber.alternate;
     if (!alternate) {
       // If there is no alternate, then we only need to check if it is mounted.
-      const state = isFiberMountedImpl(fiber);
-      if (state === UNMOUNTED) {
-        throw Error('Unable to find node on an unmounted component.');
+      const nearestMounted = getNearestMountedFiber(fiber);
+
+      if (nearestMounted === null) {
+        throw new Error('Unable to find node on an unmounted component.');
       }
-      if (state === MOUNTING) {
+
+      if (nearestMounted !== fiber) {
         return null;
       }
       return fiber;
@@ -2793,23 +2935,20 @@ export function attach(
         while (child) {
           if (child === a) {
             // We've determined that A is the current branch.
-            if (isFiberMountedImpl(parentA) !== MOUNTED) {
-              throw Error('Unable to find node on an unmounted component.');
-            }
+            assertIsMounted(parentA);
             return fiber;
           }
           if (child === b) {
             // We've determined that B is the current branch.
-            if (isFiberMountedImpl(parentA) !== MOUNTED) {
-              throw Error('Unable to find node on an unmounted component.');
-            }
+            assertIsMounted(parentA);
             return alternate;
           }
           child = child.sibling;
         }
+
         // We should never have an alternate for any mounting node. So the only
         // way this could possibly happen is if this was unmounted, if at all.
-        throw Error('Unable to find node on an unmounted component.');
+        throw new Error('Unable to find node on an unmounted component.');
       }
 
       if (a.return !== b.return) {
@@ -2860,8 +2999,9 @@ export function attach(
             }
             child = child.sibling;
           }
+
           if (!didFindChild) {
-            throw Error(
+            throw new Error(
               'Child was not found in either parent set. This indicates a bug ' +
                 'in React related to the return pointer. Please file an issue.',
             );
@@ -2870,17 +3010,19 @@ export function attach(
       }
 
       if (a.alternate !== b) {
-        throw Error(
+        throw new Error(
           "Return fibers should always be each others' alternates. " +
             'This error is likely caused by a bug in React. Please file an issue.',
         );
       }
     }
+
     // If the root is not a host container, we're in a disconnected tree. I.e.
     // unmounted.
     if (a.tag !== HostRoot) {
-      throw Error('Unable to find node on an unmounted component.');
+      throw new Error('Unable to find node on an unmounted component.');
     }
+
     if (a.stateNode.current === a) {
       // We've determined that A is the current branch.
       return fiber;
@@ -3182,6 +3324,16 @@ export function attach(
       targetErrorBoundaryID = getNearestErrorBoundaryID(fiber);
     }
 
+    const plugins: Plugins = {
+      stylex: null,
+    };
+
+    if (enableStyleXFeatures) {
+      if (memoizedProps.hasOwnProperty('xstyle')) {
+        plugins.stylex = getStyleXData(memoizedProps.xstyle);
+      }
+    }
+
     return {
       id,
 
@@ -3241,6 +3393,8 @@ export function attach(
       rootType,
       rendererPackageName: renderer.rendererPackageName,
       rendererVersion: renderer.version,
+
+      plugins,
     };
   }
 
@@ -3408,12 +3562,13 @@ export function attach(
     requestID: number,
     id: number,
     path: Array<string | number> | null,
+    forceFullData: boolean,
   ): InspectedElementPayload {
     if (path !== null) {
       mergeInspectedPaths(path);
     }
 
-    if (isMostRecentlyInspectedElement(id)) {
+    if (isMostRecentlyInspectedElement(id) && !forceFullData) {
       if (!hasElementUpdatedSinceLastInspected) {
         if (path !== null) {
           let secondaryCategory = null;
@@ -3453,7 +3608,68 @@ export function attach(
 
     hasElementUpdatedSinceLastInspected = false;
 
-    mostRecentlyInspectedElement = inspectElementRaw(id);
+    try {
+      mostRecentlyInspectedElement = inspectElementRaw(id);
+    } catch (error) {
+      // the error name is synced with ReactDebugHooks
+      if (error.name === 'ReactDebugToolsRenderError') {
+        let message = 'Error rendering inspected element.';
+        let stack;
+        // Log error & cause for user to debug
+        console.error(message + '\n\n', error);
+        if (error.cause != null) {
+          const fiber = findCurrentFiberUsingSlowPathById(id);
+          const componentName =
+            fiber != null ? getDisplayNameForFiber(fiber) : null;
+          console.error(
+            'React DevTools encountered an error while trying to inspect hooks. ' +
+              'This is most likely caused by an error in current inspected component' +
+              (componentName != null ? `: "${componentName}".` : '.') +
+              '\nThe error thrown in the component is: \n\n',
+            error.cause,
+          );
+          if (error.cause instanceof Error) {
+            message = error.cause.message || message;
+            stack = error.cause.stack;
+          }
+        }
+
+        return {
+          type: 'error',
+          errorType: 'user',
+          id,
+          responseID: requestID,
+          message,
+          stack,
+        };
+      }
+
+      // the error name is synced with ReactDebugHooks
+      if (error.name === 'ReactDebugToolsUnsupportedHookError') {
+        return {
+          type: 'error',
+          errorType: 'unknown-hook',
+          id,
+          responseID: requestID,
+          message:
+            'Unsupported hook in the react-debug-tools package: ' +
+            error.message,
+        };
+      }
+
+      // Log Uncaught Error
+      console.error('Error inspecting element.\n\n', error);
+
+      return {
+        type: 'error',
+        errorType: 'uncaught',
+        id,
+        responseID: requestID,
+        message: error.message,
+        stack: error.stack,
+      };
+    }
+
     if (mostRecentlyInspectedElement === null) {
       return {
         id,
@@ -3824,9 +4040,43 @@ export function attach(
       },
     );
 
+    let timelineData = null;
+    if (typeof getTimelineData === 'function') {
+      const currentTimelineData = getTimelineData();
+      if (currentTimelineData) {
+        const {
+          batchUIDToMeasuresMap,
+          internalModuleSourceToRanges,
+          laneToLabelMap,
+          laneToReactMeasureMap,
+          ...rest
+        } = currentTimelineData;
+
+        timelineData = {
+          ...rest,
+
+          // Most of the data is safe to parse as-is,
+          // but we need to convert the nested Arrays back to Maps.
+          // Most of the data is safe to serialize as-is,
+          // but we need to convert the Maps to nested Arrays.
+          batchUIDToMeasuresKeyValueArray: Array.from(
+            batchUIDToMeasuresMap.entries(),
+          ),
+          internalModuleSourceToRanges: Array.from(
+            internalModuleSourceToRanges.entries(),
+          ),
+          laneToLabelKeyValueArray: Array.from(laneToLabelMap.entries()),
+          laneToReactMeasureKeyValueArray: Array.from(
+            laneToReactMeasureMap.entries(),
+          ),
+        };
+      }
+    }
+
     return {
       dataForRoots,
       rendererID,
+      timelineData,
     };
   }
 
@@ -3864,11 +4114,19 @@ export function attach(
     isProfiling = true;
     profilingStartTime = getCurrentTime();
     rootToCommitProfilingMetadataMap = new Map();
+
+    if (toggleProfilingStatus !== null) {
+      toggleProfilingStatus(true);
+    }
   }
 
   function stopProfiling() {
     isProfiling = false;
     recordChangeDescriptions = false;
+
+    if (toggleProfilingStatus !== null) {
+      toggleProfilingStatus(false);
+    }
   }
 
   // Automatically start profiling so that we don't miss timing info from initial "mount".
@@ -4242,6 +4500,7 @@ export function attach(
     handlePostCommitFiberRoot,
     inspectElement,
     logElementToConsole,
+    patchConsoleForStrictMode,
     prepareViewAttributeSource,
     prepareViewElementSource,
     overrideError,
@@ -4254,6 +4513,7 @@ export function attach(
     startProfiling,
     stopProfiling,
     storeAsGlobal,
+    unpatchConsoleForStrictMode,
     updateComponentFilters,
   };
 }

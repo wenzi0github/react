@@ -9,9 +9,18 @@
 
 import type {ReactNodeList} from 'shared/ReactTypes';
 
+import {
+  checkHtmlStringCoercion,
+  checkCSSPropertyStringCoercion,
+  checkAttributeStringCoercion,
+} from 'shared/CheckStringCoercion';
+
 import {Children} from 'react';
 
-import {enableFilterEmptyStringAttributesDOM} from 'shared/ReactFeatureFlags';
+import {
+  enableFilterEmptyStringAttributesDOM,
+  enableCustomElementPropertySupport,
+} from 'shared/ReactFeatureFlags';
 
 import type {
   Destination,
@@ -21,6 +30,7 @@ import type {
 
 import {
   writeChunk,
+  writeChunkAndReturn,
   stringToChunk,
   stringToPrecomputedChunk,
 } from 'react-server/src/ReactServerStreamConfig';
@@ -43,7 +53,6 @@ import warnValidStyle from '../shared/warnValidStyle';
 
 import escapeTextForBrowser from './escapeTextForBrowser';
 import hyphenateStyleName from '../shared/hyphenateStyleName';
-import invariant from 'shared/invariant';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import sanitizeURL from '../shared/sanitizeURL';
 import isArray from 'shared/isArray';
@@ -54,30 +63,95 @@ export const isPrimaryRenderer = true;
 
 // Per response, global state that is not contextual to the rendering subtree.
 export type ResponseState = {
+  bootstrapChunks: Array<Chunk | PrecomputedChunk>,
+  startInlineScript: PrecomputedChunk,
   placeholderPrefix: PrecomputedChunk,
   segmentPrefix: PrecomputedChunk,
   boundaryPrefix: string,
-  opaqueIdentifierPrefix: string,
+  idPrefix: string,
   nextSuspenseID: number,
-  nextOpaqueID: number,
   sentCompleteSegmentFunction: boolean,
   sentCompleteBoundaryFunction: boolean,
   sentClientRenderFunction: boolean, // We allow the legacy renderer to extend this object.
   ...
 };
 
+const startInlineScript = stringToPrecomputedChunk('<script>');
+const endInlineScript = stringToPrecomputedChunk('</script>');
+
+const startScriptSrc = stringToPrecomputedChunk('<script src="');
+const startModuleSrc = stringToPrecomputedChunk('<script type="module" src="');
+const endAsyncScript = stringToPrecomputedChunk('" async=""></script>');
+
+/**
+ * This escaping function is designed to work with bootstrapScriptContent only.
+ * because we know we are escaping the entire script. We can avoid for instance
+ * escaping html comment string sequences that are valid javascript as well because
+ * if there are no sebsequent <script sequences the html parser will never enter
+ * script data double escaped state (see: https://www.w3.org/TR/html53/syntax.html#script-data-double-escaped-state)
+ *
+ * While untrusted script content should be made safe before using this api it will
+ * ensure that the script cannot be early terminated or never terminated state
+ */
+function escapeBootstrapScriptContent(scriptText) {
+  if (__DEV__) {
+    checkHtmlStringCoercion(scriptText);
+  }
+  return ('' + scriptText).replace(scriptRegex, scriptReplacer);
+}
+const scriptRegex = /(<\/|<)(s)(cript)/gi;
+const scriptReplacer = (match, prefix, s, suffix) =>
+  `${prefix}${s === 's' ? '\\u0073' : '\\u0053'}${suffix}`;
+
 // Allows us to keep track of what we've already written so we can refer back to it.
 export function createResponseState(
   identifierPrefix: string | void,
+  nonce: string | void,
+  bootstrapScriptContent: string | void,
+  bootstrapScripts: Array<string> | void,
+  bootstrapModules: Array<string> | void,
 ): ResponseState {
   const idPrefix = identifierPrefix === undefined ? '' : identifierPrefix;
+  const inlineScriptWithNonce =
+    nonce === undefined
+      ? startInlineScript
+      : stringToPrecomputedChunk(
+          '<script nonce="' + escapeTextForBrowser(nonce) + '">',
+        );
+  const bootstrapChunks = [];
+  if (bootstrapScriptContent !== undefined) {
+    bootstrapChunks.push(
+      inlineScriptWithNonce,
+      stringToChunk(escapeBootstrapScriptContent(bootstrapScriptContent)),
+      endInlineScript,
+    );
+  }
+  if (bootstrapScripts !== undefined) {
+    for (let i = 0; i < bootstrapScripts.length; i++) {
+      bootstrapChunks.push(
+        startScriptSrc,
+        stringToChunk(escapeTextForBrowser(bootstrapScripts[i])),
+        endAsyncScript,
+      );
+    }
+  }
+  if (bootstrapModules !== undefined) {
+    for (let i = 0; i < bootstrapModules.length; i++) {
+      bootstrapChunks.push(
+        startModuleSrc,
+        stringToChunk(escapeTextForBrowser(bootstrapModules[i])),
+        endAsyncScript,
+      );
+    }
+  }
   return {
+    bootstrapChunks: bootstrapChunks,
+    startInlineScript: inlineScriptWithNonce,
     placeholderPrefix: stringToPrecomputedChunk(idPrefix + 'P:'),
     segmentPrefix: stringToPrecomputedChunk(idPrefix + 'S:'),
     boundaryPrefix: idPrefix + 'B:',
-    opaqueIdentifierPrefix: idPrefix + 'R:',
+    idPrefix: idPrefix,
     nextSuspenseID: 0,
-    nextOpaqueID: 0,
     sentCompleteSegmentFunction: false,
     sentCompleteBoundaryFunction: false,
     sentClientRenderFunction: false,
@@ -168,70 +242,40 @@ export function getChildFormatContext(
   return parentContext;
 }
 
-// This object is used to lazily reuse the ID of the first generated node, or assign one.
-// We can't assign an ID up front because the node we're attaching it to might already
-// have one. So we need to lazily use that if it's available.
-export type SuspenseBoundaryID = {
-  formattedID: null | PrecomputedChunk,
-};
+export type SuspenseBoundaryID = null | PrecomputedChunk;
 
-export function createSuspenseBoundaryID(
+export const UNINITIALIZED_SUSPENSE_BOUNDARY_ID: SuspenseBoundaryID = null;
+
+export function assignSuspenseBoundaryID(
   responseState: ResponseState,
 ): SuspenseBoundaryID {
-  return {formattedID: null};
+  const generatedID = responseState.nextSuspenseID++;
+  return stringToPrecomputedChunk(
+    responseState.boundaryPrefix + generatedID.toString(16),
+  );
 }
 
-export type OpaqueIDType = string;
+export function makeId(
+  responseState: ResponseState,
+  treeId: string,
+  localId: number,
+): string {
+  const idPrefix = responseState.idPrefix;
 
-export function makeServerID(
-  responseState: null | ResponseState,
-): OpaqueIDType {
-  invariant(
-    responseState !== null,
-    'Invalid hook call. Hooks can only be called inside of the body of a function component.',
-  );
-  // TODO: This is not deterministic since it's created during render.
-  return (
-    responseState.opaqueIdentifierPrefix +
-    (responseState.nextOpaqueID++).toString(36)
-  );
+  let id = ':' + idPrefix + 'R' + treeId;
+
+  // Unless this is the first id at this level, append a number at the end
+  // that represents the position of this useId hook among all the useId
+  // hooks for this fiber.
+  if (localId > 0) {
+    id += 'H' + localId.toString(32);
+  }
+
+  return id + ':';
 }
 
 function encodeHTMLTextNode(text: string): string {
   return escapeTextForBrowser(text);
-}
-
-function assignAnID(
-  responseState: ResponseState,
-  id: SuspenseBoundaryID,
-): PrecomputedChunk {
-  // TODO: This approach doesn't yield deterministic results since this is assigned during render.
-  const generatedID = responseState.nextSuspenseID++;
-  return (id.formattedID = stringToPrecomputedChunk(
-    responseState.boundaryPrefix + generatedID.toString(16),
-  ));
-}
-
-const dummyNode1 = stringToPrecomputedChunk('<template id="');
-const dummyNode2 = stringToPrecomputedChunk('"></template>');
-
-function pushDummyNodeWithID(
-  target: Array<Chunk | PrecomputedChunk>,
-  responseState: ResponseState,
-  assignID: SuspenseBoundaryID,
-): void {
-  const id = assignAnID(responseState, assignID);
-  target.push(dummyNode1, id, dummyNode2);
-}
-
-export function pushEmpty(
-  target: Array<Chunk | PrecomputedChunk>,
-  responseState: ResponseState,
-  assignID: null | SuspenseBoundaryID,
-): void {
-  if (assignID !== null) {
-    pushDummyNodeWithID(target, responseState, assignID);
-  }
 }
 
 const textSeparator = stringToPrecomputedChunk('<!-- -->');
@@ -240,17 +284,30 @@ export function pushTextInstance(
   target: Array<Chunk | PrecomputedChunk>,
   text: string,
   responseState: ResponseState,
-  assignID: null | SuspenseBoundaryID,
-): void {
-  if (assignID !== null) {
-    pushDummyNodeWithID(target, responseState, assignID);
-  }
+  textEmbedded: boolean,
+): boolean {
   if (text === '') {
     // Empty text doesn't have a DOM node representation and the hydration is aware of this.
-    return;
+    return textEmbedded;
   }
-  // TODO: Avoid adding a text separator in common cases.
-  target.push(stringToChunk(encodeHTMLTextNode(text)), textSeparator);
+  if (textEmbedded) {
+    target.push(textSeparator);
+  }
+  target.push(stringToChunk(encodeHTMLTextNode(text)));
+  return true;
+}
+
+// Called when Fizz is done with a Segment. Currently the only purpose is to conditionally
+// emit a text separator when we don't know for sure it is safe to omit
+export function pushSegmentFinale(
+  target: Array<Chunk | PrecomputedChunk>,
+  responseState: ResponseState,
+  lastPushedText: boolean,
+  textEmbedded: boolean,
+): void {
+  if (lastPushedText && textEmbedded) {
+    target.push(textSeparator);
+  }
 }
 
 const styleNameCache: Map<string, PrecomputedChunk> = new Map();
@@ -275,12 +332,13 @@ function pushStyle(
   responseState: ResponseState,
   style: Object,
 ): void {
-  invariant(
-    typeof style === 'object',
-    'The `style` prop expects a mapping from style properties to values, ' +
-      "not a string. For example, style={{marginRight: spacing + 'em'}} when " +
-      'using JSX.',
-  );
+  if (typeof style !== 'object') {
+    throw new Error(
+      'The `style` prop expects a mapping from style properties to values, ' +
+        "not a string. For example, style={{marginRight: spacing + 'em'}} when " +
+        'using JSX.',
+    );
+  }
 
   let isFirst = true;
   for (const styleName in style) {
@@ -309,6 +367,9 @@ function pushStyle(
     const isCustomProperty = styleName.indexOf('--') === 0;
     if (isCustomProperty) {
       nameChunk = stringToChunk(escapeTextForBrowser(styleName));
+      if (__DEV__) {
+        checkCSSPropertyStringCoercion(styleValue, styleName);
+      }
       valueChunk = stringToChunk(
         escapeTextForBrowser(('' + styleValue).trim()),
       );
@@ -328,6 +389,9 @@ function pushStyle(
           valueChunk = stringToChunk('' + styleValue);
         }
       } else {
+        if (__DEV__) {
+          checkCSSPropertyStringCoercion(styleValue, styleName);
+        }
         valueChunk = stringToChunk(
           escapeTextForBrowser(('' + styleValue).trim()),
         );
@@ -447,7 +511,7 @@ function pushAttribute(
             attributeSeparator,
             attributeNameChunk,
             attributeAssign,
-            escapeTextForBrowser(value),
+            stringToChunk(escapeTextForBrowser(value)),
             attributeEnd,
           );
         }
@@ -458,7 +522,7 @@ function pushAttribute(
             attributeSeparator,
             attributeNameChunk,
             attributeAssign,
-            escapeTextForBrowser(value),
+            stringToChunk(escapeTextForBrowser(value)),
             attributeEnd,
           );
         }
@@ -469,13 +533,16 @@ function pushAttribute(
             attributeSeparator,
             attributeNameChunk,
             attributeAssign,
-            escapeTextForBrowser(value),
+            stringToChunk(escapeTextForBrowser(value)),
             attributeEnd,
           );
         }
         break;
       default:
         if (propertyInfo.sanitizeURL) {
+          if (__DEV__) {
+            checkAttributeStringCoercion(value, attributeName);
+          }
           value = '' + (value: any);
           sanitizeURL(value);
         }
@@ -483,7 +550,7 @@ function pushAttribute(
           attributeSeparator,
           attributeNameChunk,
           attributeAssign,
-          escapeTextForBrowser(value),
+          stringToChunk(escapeTextForBrowser(value)),
           attributeEnd,
         );
     }
@@ -505,7 +572,7 @@ function pushAttribute(
       attributeSeparator,
       stringToChunk(name),
       attributeAssign,
-      escapeTextForBrowser(value),
+      stringToChunk(escapeTextForBrowser(value)),
       attributeEnd,
     );
   }
@@ -514,49 +581,31 @@ function pushAttribute(
 const endOfStartTag = stringToPrecomputedChunk('>');
 const endOfStartTagSelfClosing = stringToPrecomputedChunk('/>');
 
-const idAttr = stringToPrecomputedChunk(' id="');
-const attrEnd = stringToPrecomputedChunk('"');
-
-function pushID(
-  target: Array<Chunk | PrecomputedChunk>,
-  responseState: ResponseState,
-  assignID: SuspenseBoundaryID,
-  existingID: mixed,
-): void {
-  if (
-    existingID !== null &&
-    existingID !== undefined &&
-    (typeof existingID === 'string' || typeof existingID === 'object')
-  ) {
-    // We can reuse the existing ID for our purposes.
-    assignID.formattedID = stringToPrecomputedChunk(
-      escapeTextForBrowser(existingID),
-    );
-  } else {
-    const encodedID = assignAnID(responseState, assignID);
-    target.push(idAttr, encodedID, attrEnd);
-  }
-}
-
 function pushInnerHTML(
   target: Array<Chunk | PrecomputedChunk>,
   innerHTML,
   children,
 ) {
   if (innerHTML != null) {
-    invariant(
-      children == null,
-      'Can only set one of `children` or `props.dangerouslySetInnerHTML`.',
-    );
+    if (children != null) {
+      throw new Error(
+        'Can only set one of `children` or `props.dangerouslySetInnerHTML`.',
+      );
+    }
 
-    invariant(
-      typeof innerHTML === 'object' && '__html' in innerHTML,
-      '`props.dangerouslySetInnerHTML` must be in the form `{__html: ...}`. ' +
-        'Please visit https://reactjs.org/link/dangerously-set-inner-html ' +
-        'for more information.',
-    );
+    if (typeof innerHTML !== 'object' || !('__html' in innerHTML)) {
+      throw new Error(
+        '`props.dangerouslySetInnerHTML` must be in the form `{__html: ...}`. ' +
+          'Please visit https://reactjs.org/link/dangerously-set-inner-html ' +
+          'for more information.',
+      );
+    }
+
     const html = innerHTML.__html;
     if (html !== null && html !== undefined) {
+      if (__DEV__) {
+        checkHtmlStringCoercion(html);
+      }
       target.push(stringToChunk('' + html));
     }
   }
@@ -598,7 +647,6 @@ function pushStartSelect(
   target: Array<Chunk | PrecomputedChunk>,
   props: Object,
   responseState: ResponseState,
-  assignID: null | SuspenseBoundaryID,
 ): ReactNodeList {
   if (__DEV__) {
     checkControlledValueProps('select', props);
@@ -651,9 +699,6 @@ function pushStartSelect(
       }
     }
   }
-  if (assignID !== null) {
-    pushID(target, responseState, assignID, props.id);
-  }
 
   target.push(endOfStartTag);
   pushInnerHTML(target, innerHTML, children);
@@ -693,7 +738,6 @@ function pushStartOption(
   props: Object,
   responseState: ResponseState,
   formatContext: FormatContext,
-  assignID: null | SuspenseBoundaryID,
 ): ReactNodeList {
   const selectedValue = formatContext.selectedValue;
 
@@ -742,9 +786,12 @@ function pushStartOption(
     }
   }
 
-  if (selectedValue !== null) {
+  if (selectedValue != null) {
     let stringValue;
     if (value !== null) {
+      if (__DEV__) {
+        checkAttributeStringCoercion(value, 'value');
+      }
       stringValue = '' + value;
     } else {
       if (__DEV__) {
@@ -763,21 +810,25 @@ function pushStartOption(
     if (isArray(selectedValue)) {
       // multiple
       for (let i = 0; i < selectedValue.length; i++) {
+        if (__DEV__) {
+          checkAttributeStringCoercion(selectedValue[i], 'value');
+        }
         const v = '' + selectedValue[i];
         if (v === stringValue) {
           target.push(selectedMarkerAttribute);
           break;
         }
       }
-    } else if (selectedValue === stringValue) {
-      target.push(selectedMarkerAttribute);
+    } else {
+      if (__DEV__) {
+        checkAttributeStringCoercion(selectedValue, 'select.value');
+      }
+      if ('' + selectedValue === stringValue) {
+        target.push(selectedMarkerAttribute);
+      }
     }
   } else if (selected) {
     target.push(selectedMarkerAttribute);
-  }
-
-  if (assignID !== null) {
-    pushID(target, responseState, assignID, props.id);
   }
 
   target.push(endOfStartTag);
@@ -789,7 +840,6 @@ function pushInput(
   target: Array<Chunk | PrecomputedChunk>,
   props: Object,
   responseState: ResponseState,
-  assignID: null | SuspenseBoundaryID,
 ): ReactNodeList {
   if (__DEV__) {
     checkControlledValueProps('input', props);
@@ -846,11 +896,9 @@ function pushInput(
       switch (propKey) {
         case 'children':
         case 'dangerouslySetInnerHTML':
-          invariant(
-            false,
-            '%s is a self-closing tag and must neither have `children` nor ' +
+          throw new Error(
+            `${'input'} is a self-closing tag and must neither have \`children\` nor ` +
               'use `dangerouslySetInnerHTML`.',
-            'input',
           );
         // eslint-disable-next-line-no-fallthrough
         case 'defaultChecked':
@@ -883,10 +931,6 @@ function pushInput(
     pushAttribute(target, responseState, 'value', defaultValue);
   }
 
-  if (assignID !== null) {
-    pushID(target, responseState, assignID, props.id);
-  }
-
   target.push(endOfStartTagSelfClosing);
   return null;
 }
@@ -895,7 +939,6 @@ function pushStartTextArea(
   target: Array<Chunk | PrecomputedChunk>,
   props: Object,
   responseState: ResponseState,
-  assignID: null | SuspenseBoundaryID,
 ): ReactNodeList {
   if (__DEV__) {
     checkControlledValueProps('textarea', props);
@@ -937,8 +980,7 @@ function pushStartTextArea(
           defaultValue = propValue;
           break;
         case 'dangerouslySetInnerHTML':
-          invariant(
-            false,
+          throw new Error(
             '`dangerouslySetInnerHTML` does not make sense on <textarea>.',
           );
         // eslint-disable-next-line-no-fallthrough
@@ -952,10 +994,6 @@ function pushStartTextArea(
     value = defaultValue;
   }
 
-  if (assignID !== null) {
-    pushID(target, responseState, assignID, props.id);
-  }
-
   target.push(endOfStartTag);
 
   // TODO (yungsters): Remove support for children content in <textarea>.
@@ -966,16 +1004,27 @@ function pushStartTextArea(
           'children on <textarea>.',
       );
     }
-    invariant(
-      value == null,
-      'If you supply `defaultValue` on a <textarea>, do not pass children.',
-    );
-    if (isArray(children)) {
-      invariant(
-        children.length <= 1,
-        '<textarea> can only have at most one child.',
+
+    if (value != null) {
+      throw new Error(
+        'If you supply `defaultValue` on a <textarea>, do not pass children.',
       );
+    }
+
+    if (isArray(children)) {
+      if (children.length > 1) {
+        throw new Error('<textarea> can only have at most one child.');
+      }
+
+      // TODO: remove the coercion and the DEV check below because it will
+      // always be overwritten by the coercion several lines below it. #22309
+      if (__DEV__) {
+        checkHtmlStringCoercion(children[0]);
+      }
       value = '' + children[0];
+    }
+    if (__DEV__) {
+      checkHtmlStringCoercion(children);
     }
     value = '' + children;
   }
@@ -994,7 +1043,17 @@ function pushStartTextArea(
     target.push(leadingNewline);
   }
 
-  return value;
+  // ToString and push directly instead of recurse over children.
+  // We don't really support complex children in the value anyway.
+  // This also currently avoids a trailing comment node which breaks textarea.
+  if (value !== null) {
+    if (__DEV__) {
+      checkAttributeStringCoercion(value, 'value');
+    }
+    target.push(stringToChunk(encodeHTMLTextNode('' + value)));
+  }
+
+  return null;
 }
 
 function pushSelfClosing(
@@ -1002,7 +1061,6 @@ function pushSelfClosing(
   props: Object,
   tag: string,
   responseState: ResponseState,
-  assignID: null | SuspenseBoundaryID,
 ): ReactNodeList {
   target.push(startChunkForTag(tag));
 
@@ -1015,11 +1073,9 @@ function pushSelfClosing(
       switch (propKey) {
         case 'children':
         case 'dangerouslySetInnerHTML':
-          invariant(
-            false,
-            '%s is a self-closing tag and must neither have `children` nor ' +
+          throw new Error(
+            `${tag} is a self-closing tag and must neither have \`children\` nor ` +
               'use `dangerouslySetInnerHTML`.',
-            tag,
           );
         // eslint-disable-next-line-no-fallthrough
         default:
@@ -1027,9 +1083,6 @@ function pushSelfClosing(
           break;
       }
     }
-  }
-  if (assignID !== null) {
-    pushID(target, responseState, assignID, props.id);
   }
 
   target.push(endOfStartTagSelfClosing);
@@ -1040,7 +1093,6 @@ function pushStartMenuItem(
   target: Array<Chunk | PrecomputedChunk>,
   props: Object,
   responseState: ResponseState,
-  assignID: null | SuspenseBoundaryID,
 ): ReactNodeList {
   target.push(startChunkForTag('menuitem'));
 
@@ -1053,8 +1105,7 @@ function pushStartMenuItem(
       switch (propKey) {
         case 'children':
         case 'dangerouslySetInnerHTML':
-          invariant(
-            false,
+          throw new Error(
             'menuitems cannot have `children` nor `dangerouslySetInnerHTML`.',
           );
         // eslint-disable-next-line-no-fallthrough
@@ -1063,9 +1114,6 @@ function pushStartMenuItem(
           break;
       }
     }
-  }
-  if (assignID !== null) {
-    pushID(target, responseState, assignID, props.id);
   }
 
   target.push(endOfStartTag);
@@ -1077,7 +1125,6 @@ function pushStartGenericElement(
   props: Object,
   tag: string,
   responseState: ResponseState,
-  assignID: null | SuspenseBoundaryID,
 ): ReactNodeList {
   target.push(startChunkForTag(tag));
 
@@ -1102,9 +1149,6 @@ function pushStartGenericElement(
       }
     }
   }
-  if (assignID !== null) {
-    pushID(target, responseState, assignID, props.id);
-  }
 
   target.push(endOfStartTag);
   pushInnerHTML(target, innerHTML, children);
@@ -1122,17 +1166,36 @@ function pushStartCustomElement(
   props: Object,
   tag: string,
   responseState: ResponseState,
-  assignID: null | SuspenseBoundaryID,
 ): ReactNodeList {
   target.push(startChunkForTag(tag));
 
   let children = null;
   let innerHTML = null;
-  for (const propKey in props) {
+  for (let propKey in props) {
     if (hasOwnProperty.call(props, propKey)) {
-      const propValue = props[propKey];
+      let propValue = props[propKey];
       if (propValue == null) {
         continue;
+      }
+      if (
+        enableCustomElementPropertySupport &&
+        (typeof propValue === 'function' || typeof propValue === 'object')
+      ) {
+        // It is normal to render functions and objects on custom elements when
+        // client rendering, but when server rendering the output isn't useful,
+        // so skip it.
+        continue;
+      }
+      if (enableCustomElementPropertySupport && propValue === false) {
+        continue;
+      }
+      if (enableCustomElementPropertySupport && propValue === true) {
+        propValue = '';
+      }
+      if (enableCustomElementPropertySupport && propKey === 'className') {
+        // className gets rendered as class on the client, so it should be
+        // rendered as class on the server.
+        propKey = 'class';
       }
       switch (propKey) {
         case 'children':
@@ -1158,16 +1221,13 @@ function pushStartCustomElement(
               attributeSeparator,
               stringToChunk(propKey),
               attributeAssign,
-              escapeTextForBrowser(propValue),
+              stringToChunk(escapeTextForBrowser(propValue)),
               attributeEnd,
             );
           }
           break;
       }
     }
-  }
-  if (assignID !== null) {
-    pushID(target, responseState, assignID, props.id);
   }
 
   target.push(endOfStartTag);
@@ -1182,7 +1242,6 @@ function pushStartPreformattedElement(
   props: Object,
   tag: string,
   responseState: ResponseState,
-  assignID: null | SuspenseBoundaryID,
 ): ReactNodeList {
   target.push(startChunkForTag(tag));
 
@@ -1207,9 +1266,6 @@ function pushStartPreformattedElement(
       }
     }
   }
-  if (assignID !== null) {
-    pushID(target, responseState, assignID, props.id);
-  }
 
   target.push(endOfStartTag);
 
@@ -1226,22 +1282,28 @@ function pushStartPreformattedElement(
   // TODO: This doesn't deal with the case where the child is an array
   // or component that returns a string.
   if (innerHTML != null) {
-    invariant(
-      children == null,
-      'Can only set one of `children` or `props.dangerouslySetInnerHTML`.',
-    );
+    if (children != null) {
+      throw new Error(
+        'Can only set one of `children` or `props.dangerouslySetInnerHTML`.',
+      );
+    }
 
-    invariant(
-      typeof innerHTML === 'object' && '__html' in innerHTML,
-      '`props.dangerouslySetInnerHTML` must be in the form `{__html: ...}`. ' +
-        'Please visit https://reactjs.org/link/dangerously-set-inner-html ' +
-        'for more information.',
-    );
+    if (typeof innerHTML !== 'object' || !('__html' in innerHTML)) {
+      throw new Error(
+        '`props.dangerouslySetInnerHTML` must be in the form `{__html: ...}`. ' +
+          'Please visit https://reactjs.org/link/dangerously-set-inner-html ' +
+          'for more information.',
+      );
+    }
+
     const html = innerHTML.__html;
     if (html !== null && html !== undefined) {
       if (typeof html === 'string' && html.length > 0 && html[0] === '\n') {
         target.push(leadingNewline, stringToChunk(html));
       } else {
+        if (__DEV__) {
+          checkHtmlStringCoercion(html);
+        }
         target.push(stringToChunk('' + html));
       }
     }
@@ -1260,7 +1322,10 @@ const validatedTagCache = new Map();
 function startChunkForTag(tag: string): PrecomputedChunk {
   let tagStartChunk = validatedTagCache.get(tag);
   if (tagStartChunk === undefined) {
-    invariant(VALID_TAG_REGEX.test(tag), 'Invalid tag: %s', tag);
+    if (!VALID_TAG_REGEX.test(tag)) {
+      throw new Error(`Invalid tag: ${tag}`);
+    }
+
     tagStartChunk = stringToPrecomputedChunk('<' + tag);
     validatedTagCache.set(tag, tagStartChunk);
   }
@@ -1275,7 +1340,6 @@ export function pushStartInstance(
   props: Object,
   responseState: ResponseState,
   formatContext: FormatContext,
-  assignID: null | SuspenseBoundaryID,
 ): ReactNodeList {
   if (__DEV__) {
     validateARIAProperties(type, props);
@@ -1317,31 +1381,19 @@ export function pushStartInstance(
   switch (type) {
     // Special tags
     case 'select':
-      return pushStartSelect(target, props, responseState, assignID);
+      return pushStartSelect(target, props, responseState);
     case 'option':
-      return pushStartOption(
-        target,
-        props,
-        responseState,
-        formatContext,
-        assignID,
-      );
+      return pushStartOption(target, props, responseState, formatContext);
     case 'textarea':
-      return pushStartTextArea(target, props, responseState, assignID);
+      return pushStartTextArea(target, props, responseState);
     case 'input':
-      return pushInput(target, props, responseState, assignID);
+      return pushInput(target, props, responseState);
     case 'menuitem':
-      return pushStartMenuItem(target, props, responseState, assignID);
+      return pushStartMenuItem(target, props, responseState);
     // Newline eating tags
     case 'listing':
     case 'pre': {
-      return pushStartPreformattedElement(
-        target,
-        props,
-        type,
-        responseState,
-        assignID,
-      );
+      return pushStartPreformattedElement(target, props, type, responseState);
     }
     // Omitted close tags
     case 'area':
@@ -1358,7 +1410,7 @@ export function pushStartInstance(
     case 'source':
     case 'track':
     case 'wbr': {
-      return pushSelfClosing(target, props, type, responseState, assignID);
+      return pushSelfClosing(target, props, type, responseState);
     }
     // These are reserved SVG and MathML elements, that are never custom elements.
     // https://w3c.github.io/webcomponents/spec/custom/#custom-elements-core-concepts
@@ -1370,13 +1422,7 @@ export function pushStartInstance(
     case 'font-face-format':
     case 'font-face-name':
     case 'missing-glyph': {
-      return pushStartGenericElement(
-        target,
-        props,
-        type,
-        responseState,
-        assignID,
-      );
+      return pushStartGenericElement(target, props, type, responseState);
     }
     case 'html': {
       if (formatContext.insertionMode === ROOT_HTML_MODE) {
@@ -1385,33 +1431,15 @@ export function pushStartInstance(
         // rendering the whole document.
         target.push(DOCTYPE);
       }
-      return pushStartGenericElement(
-        target,
-        props,
-        type,
-        responseState,
-        assignID,
-      );
+      return pushStartGenericElement(target, props, type, responseState);
     }
     default: {
       if (type.indexOf('-') === -1 && typeof props.is !== 'string') {
         // Generic element
-        return pushStartGenericElement(
-          target,
-          props,
-          type,
-          responseState,
-          assignID,
-        );
+        return pushStartGenericElement(target, props, type, responseState);
       } else {
         // Custom element
-        return pushStartCustomElement(
-          target,
-          props,
-          type,
-          responseState,
-          assignID,
-        );
+        return pushStartCustomElement(target, props, type, responseState);
       }
     }
   }
@@ -1453,6 +1481,21 @@ export function pushEndInstance(
   }
 }
 
+export function writeCompletedRoot(
+  destination: Destination,
+  responseState: ResponseState,
+): boolean {
+  const bootstrapChunks = responseState.bootstrapChunks;
+  let i = 0;
+  for (; i < bootstrapChunks.length - 1; i++) {
+    writeChunk(destination, bootstrapChunks[i]);
+  }
+  if (i < bootstrapChunks.length) {
+    return writeChunkAndReturn(destination, bootstrapChunks[i]);
+  }
+  return true;
+}
+
 // Structural Nodes
 
 // A placeholder is a node inside a hidden partial tree that can be filled in later, but before
@@ -1469,55 +1512,125 @@ export function writePlaceholder(
   writeChunk(destination, responseState.placeholderPrefix);
   const formattedID = stringToChunk(id.toString(16));
   writeChunk(destination, formattedID);
-  return writeChunk(destination, placeholder2);
+  return writeChunkAndReturn(destination, placeholder2);
 }
 
 // Suspense boundaries are encoded as comments.
 const startCompletedSuspenseBoundary = stringToPrecomputedChunk('<!--$-->');
-const startPendingSuspenseBoundary = stringToPrecomputedChunk('<!--$?-->');
+const startPendingSuspenseBoundary1 = stringToPrecomputedChunk(
+  '<!--$?--><template id="',
+);
+const startPendingSuspenseBoundary2 = stringToPrecomputedChunk('"></template>');
 const startClientRenderedSuspenseBoundary = stringToPrecomputedChunk(
   '<!--$!-->',
 );
 const endSuspenseBoundary = stringToPrecomputedChunk('<!--/$-->');
 
+const clientRenderedSuspenseBoundaryError1 = stringToPrecomputedChunk(
+  '<template data-hash="',
+);
+const clientRenderedSuspenseBoundaryError1A = stringToPrecomputedChunk(
+  '" data-msg="',
+);
+const clientRenderedSuspenseBoundaryError1B = stringToPrecomputedChunk(
+  '" data-stack="',
+);
+const clientRenderedSuspenseBoundaryError2 = stringToPrecomputedChunk(
+  '"></template>',
+);
+
+export function pushStartCompletedSuspenseBoundary(
+  target: Array<Chunk | PrecomputedChunk>,
+) {
+  target.push(startCompletedSuspenseBoundary);
+}
+
+export function pushEndCompletedSuspenseBoundary(
+  target: Array<Chunk | PrecomputedChunk>,
+) {
+  target.push(endSuspenseBoundary);
+}
+
 export function writeStartCompletedSuspenseBoundary(
   destination: Destination,
   responseState: ResponseState,
-  id: SuspenseBoundaryID,
 ): boolean {
-  return writeChunk(destination, startCompletedSuspenseBoundary);
+  return writeChunkAndReturn(destination, startCompletedSuspenseBoundary);
 }
 export function writeStartPendingSuspenseBoundary(
   destination: Destination,
   responseState: ResponseState,
   id: SuspenseBoundaryID,
 ): boolean {
-  return writeChunk(destination, startPendingSuspenseBoundary);
+  writeChunk(destination, startPendingSuspenseBoundary1);
+
+  if (id === null) {
+    throw new Error(
+      'An ID must have been assigned before we can complete the boundary.',
+    );
+  }
+
+  writeChunk(destination, id);
+  return writeChunkAndReturn(destination, startPendingSuspenseBoundary2);
 }
 export function writeStartClientRenderedSuspenseBoundary(
   destination: Destination,
   responseState: ResponseState,
-  id: SuspenseBoundaryID,
+  errorHash: ?string,
+  errorMesssage: ?string,
+  errorComponentStack: ?string,
 ): boolean {
-  return writeChunk(destination, startClientRenderedSuspenseBoundary);
+  let result;
+  result = writeChunkAndReturn(
+    destination,
+    startClientRenderedSuspenseBoundary,
+  );
+  if (errorHash) {
+    writeChunk(destination, clientRenderedSuspenseBoundaryError1);
+    writeChunk(destination, stringToChunk(escapeTextForBrowser(errorHash)));
+    // In prod errorMessage will usually be nullish but there is one case where
+    // it is used (currently when the server aborts the task) so we leave it ungated.
+    if (errorMesssage) {
+      writeChunk(destination, clientRenderedSuspenseBoundaryError1A);
+      writeChunk(
+        destination,
+        stringToChunk(escapeTextForBrowser(errorMesssage)),
+      );
+    }
+    if (__DEV__) {
+      // Component stacks are currently only captured in dev
+      if (errorComponentStack) {
+        writeChunk(destination, clientRenderedSuspenseBoundaryError1B);
+        writeChunk(
+          destination,
+          stringToChunk(escapeTextForBrowser(errorComponentStack)),
+        );
+      }
+    }
+    result = writeChunkAndReturn(
+      destination,
+      clientRenderedSuspenseBoundaryError2,
+    );
+  }
+  return result;
 }
 export function writeEndCompletedSuspenseBoundary(
   destination: Destination,
   responseState: ResponseState,
 ): boolean {
-  return writeChunk(destination, endSuspenseBoundary);
+  return writeChunkAndReturn(destination, endSuspenseBoundary);
 }
 export function writeEndPendingSuspenseBoundary(
   destination: Destination,
   responseState: ResponseState,
 ): boolean {
-  return writeChunk(destination, endSuspenseBoundary);
+  return writeChunkAndReturn(destination, endSuspenseBoundary);
 }
 export function writeEndClientRenderedSuspenseBoundary(
   destination: Destination,
   responseState: ResponseState,
 ): boolean {
-  return writeChunk(destination, endSuspenseBoundary);
+  return writeChunkAndReturn(destination, endSuspenseBoundary);
 }
 
 const startSegmentHTML = stringToPrecomputedChunk('<div hidden id="');
@@ -1568,25 +1681,25 @@ export function writeStartSegment(
       writeChunk(destination, startSegmentHTML);
       writeChunk(destination, responseState.segmentPrefix);
       writeChunk(destination, stringToChunk(id.toString(16)));
-      return writeChunk(destination, startSegmentHTML2);
+      return writeChunkAndReturn(destination, startSegmentHTML2);
     }
     case SVG_MODE: {
       writeChunk(destination, startSegmentSVG);
       writeChunk(destination, responseState.segmentPrefix);
       writeChunk(destination, stringToChunk(id.toString(16)));
-      return writeChunk(destination, startSegmentSVG2);
+      return writeChunkAndReturn(destination, startSegmentSVG2);
     }
     case MATHML_MODE: {
       writeChunk(destination, startSegmentMathML);
       writeChunk(destination, responseState.segmentPrefix);
       writeChunk(destination, stringToChunk(id.toString(16)));
-      return writeChunk(destination, startSegmentMathML2);
+      return writeChunkAndReturn(destination, startSegmentMathML2);
     }
     case HTML_TABLE_MODE: {
       writeChunk(destination, startSegmentTable);
       writeChunk(destination, responseState.segmentPrefix);
       writeChunk(destination, stringToChunk(id.toString(16)));
-      return writeChunk(destination, startSegmentTable2);
+      return writeChunkAndReturn(destination, startSegmentTable2);
     }
     // TODO: For the rest of these, there will be extra wrapper nodes that never
     // get deleted from the document. We need to delete the table too as part
@@ -1596,22 +1709,22 @@ export function writeStartSegment(
       writeChunk(destination, startSegmentTableBody);
       writeChunk(destination, responseState.segmentPrefix);
       writeChunk(destination, stringToChunk(id.toString(16)));
-      return writeChunk(destination, startSegmentTableBody2);
+      return writeChunkAndReturn(destination, startSegmentTableBody2);
     }
     case HTML_TABLE_ROW_MODE: {
       writeChunk(destination, startSegmentTableRow);
       writeChunk(destination, responseState.segmentPrefix);
       writeChunk(destination, stringToChunk(id.toString(16)));
-      return writeChunk(destination, startSegmentTableRow2);
+      return writeChunkAndReturn(destination, startSegmentTableRow2);
     }
     case HTML_COLGROUP_MODE: {
       writeChunk(destination, startSegmentColGroup);
       writeChunk(destination, responseState.segmentPrefix);
       writeChunk(destination, stringToChunk(id.toString(16)));
-      return writeChunk(destination, startSegmentColGroup2);
+      return writeChunkAndReturn(destination, startSegmentColGroup2);
     }
     default: {
-      invariant(false, 'Unknown insertion mode. This is a bug in React.');
+      throw new Error('Unknown insertion mode. This is a bug in React.');
     }
   }
 }
@@ -1622,28 +1735,28 @@ export function writeEndSegment(
   switch (formatContext.insertionMode) {
     case ROOT_HTML_MODE:
     case HTML_MODE: {
-      return writeChunk(destination, endSegmentHTML);
+      return writeChunkAndReturn(destination, endSegmentHTML);
     }
     case SVG_MODE: {
-      return writeChunk(destination, endSegmentSVG);
+      return writeChunkAndReturn(destination, endSegmentSVG);
     }
     case MATHML_MODE: {
-      return writeChunk(destination, endSegmentMathML);
+      return writeChunkAndReturn(destination, endSegmentMathML);
     }
     case HTML_TABLE_MODE: {
-      return writeChunk(destination, endSegmentTable);
+      return writeChunkAndReturn(destination, endSegmentTable);
     }
     case HTML_TABLE_BODY_MODE: {
-      return writeChunk(destination, endSegmentTableBody);
+      return writeChunkAndReturn(destination, endSegmentTableBody);
     }
     case HTML_TABLE_ROW_MODE: {
-      return writeChunk(destination, endSegmentTableRow);
+      return writeChunkAndReturn(destination, endSegmentTableRow);
     }
     case HTML_COLGROUP_MODE: {
-      return writeChunk(destination, endSegmentColGroup);
+      return writeChunkAndReturn(destination, endSegmentColGroup);
     }
     default: {
-      invariant(false, 'Unknown insertion mode. This is a bug in React.');
+      throw new Error('Unknown insertion mode. This is a bug in React.');
     }
   }
 }
@@ -1659,23 +1772,23 @@ export function writeEndSegment(
 // const SUSPENSE_PENDING_START_DATA = '$?';
 // const SUSPENSE_FALLBACK_START_DATA = '$!';
 //
-// function clientRenderBoundary(suspenseBoundaryID) {
+// function clientRenderBoundary(suspenseBoundaryID, errorHash, errorMsg, errorComponentStack) {
 //   // Find the fallback's first element.
-//   let suspenseNode = document.getElementById(suspenseBoundaryID);
-//   if (!suspenseNode) {
+//   const suspenseIdNode = document.getElementById(suspenseBoundaryID);
+//   if (!suspenseIdNode) {
 //     // The user must have already navigated away from this tree.
 //     // E.g. because the parent was hydrated.
 //     return;
 //   }
-//   // Find the boundary around the fallback. This might include text nodes.
-//   do {
-//     suspenseNode = suspenseNode.previousSibling;
-//   } while (
-//     suspenseNode.nodeType !== COMMENT_NODE ||
-//     suspenseNode.data !== SUSPENSE_PENDING_START_DATA
-//   );
+//   // Find the boundary around the fallback. This is always the previous node.
+//   const suspenseNode = suspenseIdNode.previousSibling;
 //   // Tag it to be client rendered.
 //   suspenseNode.data = SUSPENSE_FALLBACK_START_DATA;
+//   // assign error metadata to first sibling
+//   let dataset = suspenseIdNode.dataset;
+//   if (errorHash) dataset.hash = errorHash;
+//   if (errorMsg) dataset.msg = errorMsg;
+//   if (errorComponentStack) dataset.stack = errorComponentStack;
 //   // Tell React to retry it if the parent already hydrated.
 //   if (suspenseNode._reactRetry) {
 //     suspenseNode._reactRetry();
@@ -1684,29 +1797,24 @@ export function writeEndSegment(
 //
 // function completeBoundary(suspenseBoundaryID, contentID) {
 //   // Find the fallback's first element.
-//   let suspenseNode = document.getElementById(suspenseBoundaryID);
+//   const suspenseIdNode = document.getElementById(suspenseBoundaryID);
 //   const contentNode = document.getElementById(contentID);
 //   // We'll detach the content node so that regardless of what happens next we don't leave in the tree.
 //   // This might also help by not causing recalcing each time we move a child from here to the target.
 //   contentNode.parentNode.removeChild(contentNode);
-//   if (!suspenseNode) {
+//   if (!suspenseIdNode) {
 //     // The user must have already navigated away from this tree.
 //     // E.g. because the parent was hydrated. That's fine there's nothing to do
 //     // but we have to make sure that we already deleted the container node.
 //     return;
 //   }
-//   // Find the boundary around the fallback. This might include text nodes.
-//   do {
-//     suspenseNode = suspenseNode.previousSibling;
-//   } while (
-//     suspenseNode.nodeType !== COMMENT_NODE ||
-//     suspenseNode.data !== SUSPENSE_PENDING_START_DATA
-//   );
+//   // Find the boundary around the fallback. This is always the previous node.
+//   const suspenseNode = suspenseIdNode.previousSibling;
 //
 //   // Clear all the existing children. This is complicated because
 //   // there can be embedded Suspense boundaries in the fallback.
 //   // This is similar to clearSuspenseBoundary in ReactDOMHostConfig.
-//   // TOOD: We could avoid this if we never emitted suspense boundaries in fallback trees.
+//   // TODO: We could avoid this if we never emitted suspense boundaries in fallback trees.
 //   // They never hydrate anyway. However, currently we support incrementally loading the fallback.
 //   const parentInstance = suspenseNode.parentNode;
 //   let node = suspenseNode.nextSibling;
@@ -1764,16 +1872,16 @@ export function writeEndSegment(
 // }
 
 const completeSegmentFunction =
-  'function $RS(b,f){var a=document.getElementById(b),c=document.getElementById(f);for(a.parentNode.removeChild(a);a.firstChild;)c.parentNode.insertBefore(a.firstChild,c);c.parentNode.removeChild(c)}';
+  'function $RS(a,b){a=document.getElementById(a);b=document.getElementById(b);for(a.parentNode.removeChild(a);a.firstChild;)b.parentNode.insertBefore(a.firstChild,b);b.parentNode.removeChild(b)}';
 const completeBoundaryFunction =
-  'function $RC(b,f){var a=document.getElementById(b),c=document.getElementById(f);c.parentNode.removeChild(c);if(a){do a=a.previousSibling;while(8!==a.nodeType||"$?"!==a.data);var h=a.parentNode,d=a.nextSibling,g=0;do{if(d&&8===d.nodeType){var e=d.data;if("/$"===e)if(0===g)break;else g--;else"$"!==e&&"$?"!==e&&"$!"!==e||g++}e=d.nextSibling;h.removeChild(d);d=e}while(d);for(;c.firstChild;)h.insertBefore(c.firstChild,d);a.data="$";a._reactRetry&&a._reactRetry()}}';
+  'function $RC(a,b){a=document.getElementById(a);b=document.getElementById(b);b.parentNode.removeChild(b);if(a){a=a.previousSibling;var f=a.parentNode,c=a.nextSibling,e=0;do{if(c&&8===c.nodeType){var d=c.data;if("/$"===d)if(0===e)break;else e--;else"$"!==d&&"$?"!==d&&"$!"!==d||e++}d=c.nextSibling;f.removeChild(c);c=d}while(c);for(;b.firstChild;)f.insertBefore(b.firstChild,c);a.data="$";a._reactRetry&&a._reactRetry()}}';
 const clientRenderFunction =
-  'function $RX(b){if(b=document.getElementById(b)){do b=b.previousSibling;while(8!==b.nodeType||"$?"!==b.data);b.data="$!";b._reactRetry&&b._reactRetry()}}';
+  'function $RX(b,c,d,e){var a=document.getElementById(b);a&&(b=a.previousSibling,b.data="$!",a=a.dataset,c&&(a.hash=c),d&&(a.msg=d),e&&(a.stack=e),b._reactRetry&&b._reactRetry())}';
 
 const completeSegmentScript1Full = stringToPrecomputedChunk(
-  '<script>' + completeSegmentFunction + ';$RS("',
+  completeSegmentFunction + ';$RS("',
 );
-const completeSegmentScript1Partial = stringToPrecomputedChunk('<script>$RS("');
+const completeSegmentScript1Partial = stringToPrecomputedChunk('$RS("');
 const completeSegmentScript2 = stringToPrecomputedChunk('","');
 const completeSegmentScript3 = stringToPrecomputedChunk('")</script>');
 
@@ -1782,6 +1890,7 @@ export function writeCompletedSegmentInstruction(
   responseState: ResponseState,
   contentSegmentID: number,
 ): boolean {
+  writeChunk(destination, responseState.startInlineScript);
   if (!responseState.sentCompleteSegmentFunction) {
     // The first time we write this, we'll need to include the full implementation.
     responseState.sentCompleteSegmentFunction = true;
@@ -1796,15 +1905,13 @@ export function writeCompletedSegmentInstruction(
   writeChunk(destination, completeSegmentScript2);
   writeChunk(destination, responseState.placeholderPrefix);
   writeChunk(destination, formattedID);
-  return writeChunk(destination, completeSegmentScript3);
+  return writeChunkAndReturn(destination, completeSegmentScript3);
 }
 
 const completeBoundaryScript1Full = stringToPrecomputedChunk(
-  '<script>' + completeBoundaryFunction + ';$RC("',
+  completeBoundaryFunction + ';$RC("',
 );
-const completeBoundaryScript1Partial = stringToPrecomputedChunk(
-  '<script>$RC("',
-);
+const completeBoundaryScript1Partial = stringToPrecomputedChunk('$RC("');
 const completeBoundaryScript2 = stringToPrecomputedChunk('","');
 const completeBoundaryScript3 = stringToPrecomputedChunk('")</script>');
 
@@ -1814,6 +1921,7 @@ export function writeCompletedBoundaryInstruction(
   boundaryID: SuspenseBoundaryID,
   contentSegmentID: number,
 ): boolean {
+  writeChunk(destination, responseState.startInlineScript);
   if (!responseState.sentCompleteBoundaryFunction) {
     // The first time we write this, we'll need to include the full implementation.
     responseState.sentCompleteBoundaryFunction = true;
@@ -1822,30 +1930,38 @@ export function writeCompletedBoundaryInstruction(
     // Future calls can just reuse the same function.
     writeChunk(destination, completeBoundaryScript1Partial);
   }
-  const formattedBoundaryID = boundaryID.formattedID;
-  invariant(
-    formattedBoundaryID !== null,
-    'An ID must have been assigned before we can complete the boundary.',
-  );
+
+  if (boundaryID === null) {
+    throw new Error(
+      'An ID must have been assigned before we can complete the boundary.',
+    );
+  }
+
   const formattedContentID = stringToChunk(contentSegmentID.toString(16));
-  writeChunk(destination, formattedBoundaryID);
+  writeChunk(destination, boundaryID);
   writeChunk(destination, completeBoundaryScript2);
   writeChunk(destination, responseState.segmentPrefix);
   writeChunk(destination, formattedContentID);
-  return writeChunk(destination, completeBoundaryScript3);
+  return writeChunkAndReturn(destination, completeBoundaryScript3);
 }
 
 const clientRenderScript1Full = stringToPrecomputedChunk(
-  '<script>' + clientRenderFunction + ';$RX("',
+  clientRenderFunction + ';$RX("',
 );
-const clientRenderScript1Partial = stringToPrecomputedChunk('<script>$RX("');
-const clientRenderScript2 = stringToPrecomputedChunk('")</script>');
+const clientRenderScript1Partial = stringToPrecomputedChunk('$RX("');
+const clientRenderScript1A = stringToPrecomputedChunk('"');
+const clientRenderScript2 = stringToPrecomputedChunk(')</script>');
+const clientRenderErrorScriptArgInterstitial = stringToPrecomputedChunk(',');
 
 export function writeClientRenderBoundaryInstruction(
   destination: Destination,
   responseState: ResponseState,
   boundaryID: SuspenseBoundaryID,
+  errorHash: ?string,
+  errorMessage?: string,
+  errorComponentStack?: string,
 ): boolean {
+  writeChunk(destination, responseState.startInlineScript);
   if (!responseState.sentClientRenderFunction) {
     // The first time we write this, we'll need to include the full implementation.
     responseState.sentClientRenderFunction = true;
@@ -1854,11 +1970,57 @@ export function writeClientRenderBoundaryInstruction(
     // Future calls can just reuse the same function.
     writeChunk(destination, clientRenderScript1Partial);
   }
-  const formattedBoundaryID = boundaryID.formattedID;
-  invariant(
-    formattedBoundaryID !== null,
-    'An ID must have been assigned before we can complete the boundary.',
-  );
-  writeChunk(destination, formattedBoundaryID);
-  return writeChunk(destination, clientRenderScript2);
+
+  if (boundaryID === null) {
+    throw new Error(
+      'An ID must have been assigned before we can complete the boundary.',
+    );
+  }
+
+  writeChunk(destination, boundaryID);
+  writeChunk(destination, clientRenderScript1A);
+  if (errorHash || errorMessage || errorComponentStack) {
+    writeChunk(destination, clientRenderErrorScriptArgInterstitial);
+    writeChunk(
+      destination,
+      stringToChunk(escapeJSStringsForInstructionScripts(errorHash || '')),
+    );
+  }
+  if (errorMessage || errorComponentStack) {
+    writeChunk(destination, clientRenderErrorScriptArgInterstitial);
+    writeChunk(
+      destination,
+      stringToChunk(escapeJSStringsForInstructionScripts(errorMessage || '')),
+    );
+  }
+  if (errorComponentStack) {
+    writeChunk(destination, clientRenderErrorScriptArgInterstitial);
+    writeChunk(
+      destination,
+      stringToChunk(escapeJSStringsForInstructionScripts(errorComponentStack)),
+    );
+  }
+  return writeChunkAndReturn(destination, clientRenderScript2);
+}
+
+const regexForJSStringsInScripts = /[<\u2028\u2029]/g;
+function escapeJSStringsForInstructionScripts(input: string): string {
+  const escaped = JSON.stringify(input);
+  return escaped.replace(regexForJSStringsInScripts, match => {
+    switch (match) {
+      // santizing breaking out of strings and script tags
+      case '<':
+        return '\\u003c';
+      case '\u2028':
+        return '\\u2028';
+      case '\u2029':
+        return '\\u2029';
+      default: {
+        // eslint-disable-next-line react-internal/prod-error-codes
+        throw new Error(
+          'escapeJSStringsForInstructionScripts encountered a match it does not know how to replace. this means the match regex and the replacement characters are no longer in sync. This is a bug in React',
+        );
+      }
+    }
+  });
 }

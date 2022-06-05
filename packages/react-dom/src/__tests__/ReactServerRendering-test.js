@@ -14,8 +14,6 @@ let React;
 let ReactDOMServer;
 let PropTypes;
 let ReactCurrentDispatcher;
-const enableSuspenseServerRenderer = require('shared/ReactFeatureFlags')
-  .enableSuspenseServerRenderer;
 
 describe('ReactDOMServer', () => {
   beforeEach(() => {
@@ -569,7 +567,13 @@ describe('ReactDOMServer', () => {
   describe('renderToNodeStream', () => {
     it('should generate simple markup', () => {
       const SuccessfulElement = React.createElement(() => <img />);
-      const response = ReactDOMServer.renderToNodeStream(SuccessfulElement);
+      let response;
+      expect(() => {
+        response = ReactDOMServer.renderToNodeStream(SuccessfulElement);
+      }).toErrorDev(
+        'renderToNodeStream is deprecated. Use renderToPipeableStream instead.',
+        {withoutStack: true},
+      );
       expect(response.read().toString()).toMatch(new RegExp('<img' + '/>'));
     });
 
@@ -577,7 +581,13 @@ describe('ReactDOMServer', () => {
       const FailingElement = React.createElement(() => {
         throw new Error('An Error');
       });
-      const response = ReactDOMServer.renderToNodeStream(FailingElement);
+      let response;
+      expect(() => {
+        response = ReactDOMServer.renderToNodeStream(FailingElement);
+      }).toErrorDev(
+        'renderToNodeStream is deprecated. Use renderToPipeableStream instead.',
+        {withoutStack: true},
+      );
       return new Promise(resolve => {
         response.once('error', () => {
           resolve();
@@ -665,41 +675,6 @@ describe('ReactDOMServer', () => {
     const markup = ReactDOMServer.renderToStaticMarkup(<Baz />);
     expect(markup).toBe('<div></div>');
   });
-
-  if (!enableSuspenseServerRenderer) {
-    it('throws for unsupported types on the server', () => {
-      expect(() => {
-        ReactDOMServer.renderToString(<React.Suspense />);
-      }).toThrow('ReactDOMServer does not yet support Suspense.');
-
-      async function fakeImport(result) {
-        return {default: result};
-      }
-
-      expect(() => {
-        const LazyFoo = React.lazy(() =>
-          fakeImport(
-            new Promise(resolve =>
-              resolve(function Foo() {
-                return <div />;
-              }),
-            ),
-          ),
-        );
-        ReactDOMServer.renderToString(<LazyFoo />);
-      }).toThrow('ReactDOMServer does not yet support Suspense.');
-    });
-
-    it('throws when suspending on the server', () => {
-      function AsyncFoo() {
-        throw new Promise(() => {});
-      }
-
-      expect(() => {
-        ReactDOMServer.renderToString(<AsyncFoo />);
-      }).toThrow('ReactDOMServer does not yet support Suspense.');
-    });
-  }
 
   it('does not get confused by throwing null', () => {
     function Bad() {
@@ -1096,5 +1071,44 @@ describe('ReactDOMServer', () => {
         'contextType should point to the Context object returned by React.createContext(). ' +
         'However, it is set to a string.',
     );
+  });
+
+  describe('custom element server rendering', () => {
+    it('String properties should be server rendered for custom elements', () => {
+      const output = ReactDOMServer.renderToString(
+        <my-custom-element foo="bar" />,
+      );
+      expect(output).toBe(`<my-custom-element foo="bar"></my-custom-element>`);
+    });
+
+    it('Number properties should be server rendered for custom elements', () => {
+      const output = ReactDOMServer.renderToString(
+        <my-custom-element foo={5} />,
+      );
+      expect(output).toBe(`<my-custom-element foo="5"></my-custom-element>`);
+    });
+
+    // @gate enableCustomElementPropertySupport
+    it('Object properties should not be server rendered for custom elements', () => {
+      const output = ReactDOMServer.renderToString(
+        <my-custom-element foo={{foo: 'bar'}} />,
+      );
+      expect(output).toBe(`<my-custom-element></my-custom-element>`);
+    });
+
+    // @gate enableCustomElementPropertySupport
+    it('Array properties should not be server rendered for custom elements', () => {
+      const output = ReactDOMServer.renderToString(
+        <my-custom-element foo={['foo', 'bar']} />,
+      );
+      expect(output).toBe(`<my-custom-element></my-custom-element>`);
+    });
+
+    it('Function properties should not be server rendered for custom elements', () => {
+      const output = ReactDOMServer.renderToString(
+        <my-custom-element foo={() => console.log('bar')} />,
+      );
+      expect(output).toBe(`<my-custom-element></my-custom-element>`);
+    });
   });
 });

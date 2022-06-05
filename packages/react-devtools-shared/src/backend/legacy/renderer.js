@@ -63,7 +63,7 @@ function getData(internalInstance: InternalInstance) {
   // != used deliberately here to catch undefined and null
   if (internalInstance._currentElement != null) {
     if (internalInstance._currentElement.key) {
-      key = '' + internalInstance._currentElement.key;
+      key = String(internalInstance._currentElement.key);
     }
 
     const elementType = internalInstance._currentElement.type;
@@ -386,7 +386,9 @@ export function attach(
       pushOperation(TREE_OPERATION_ADD);
       pushOperation(id);
       pushOperation(ElementTypeRoot);
-      pushOperation(0); // isProfilingSupported?
+      pushOperation(0); // StrictMode compliant?
+      pushOperation(0); // Profiling flag
+      pushOperation(0); // StrictMode supported?
       pushOperation(hasOwnerMetadata ? 1 : 0);
     } else {
       const type = getElementType(internalInstance);
@@ -694,8 +696,9 @@ export function attach(
     requestID: number,
     id: number,
     path: Array<string | number> | null,
+    forceFullData: boolean,
   ): InspectedElementPayload {
-    if (currentlyInspectedElementID !== id) {
+    if (forceFullData || currentlyInspectedElementID !== id) {
       currentlyInspectedElementID = id;
       currentlyInspectedPaths = {};
     }
@@ -715,7 +718,7 @@ export function attach(
 
     // Any time an inspected element has an update,
     // we should update the selected $r value as wel.
-    // Do this before dehyration (cleanForBridge).
+    // Do this before dehydration (cleanForBridge).
     updateSelectedElement(id);
 
     inspectedElement.context = cleanForBridge(
@@ -837,6 +840,10 @@ export function attach(
       rootType: null,
       rendererPackageName: null,
       rendererVersion: null,
+
+      plugins: {
+        stylex: null,
+      },
     };
   }
 
@@ -1073,6 +1080,10 @@ export function attach(
     // Not implemented
   }
 
+  function patchConsoleForStrictMode() {}
+
+  function unpatchConsoleForStrictMode() {}
+
   return {
     clearErrorsAndWarnings,
     clearErrorsForFiberID,
@@ -1101,6 +1112,7 @@ export function attach(
     overrideSuspense,
     overrideValueAtPath,
     renamePath,
+    patchConsoleForStrictMode,
     prepareViewAttributeSource,
     prepareViewElementSource,
     renderer,
@@ -1109,6 +1121,7 @@ export function attach(
     startProfiling,
     stopProfiling,
     storeAsGlobal,
+    unpatchConsoleForStrictMode,
     updateComponentFilters,
   };
 }

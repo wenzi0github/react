@@ -7,7 +7,10 @@
  * @flow
  */
 
-import {enableFilterEmptyStringAttributesDOM} from 'shared/ReactFeatureFlags';
+import {
+  enableFilterEmptyStringAttributesDOM,
+  enableCustomElementPropertySupport,
+} from 'shared/ReactFeatureFlags';
 import hasOwnProperty from 'shared/hasOwnProperty';
 
 type PropertyType = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -159,6 +162,11 @@ export function shouldRemoveAttribute(
     return true;
   }
   if (isCustomComponentTag) {
+    if (enableCustomElementPropertySupport) {
+      if (value === false) {
+        return true;
+      }
+    }
     return false;
   }
   if (propertyInfo !== null) {
@@ -247,6 +255,9 @@ const reservedProps = [
   'suppressHydrationWarning',
   'style',
 ];
+if (enableCustomElementPropertySupport) {
+  reservedProps.push('innerText', 'textContent');
+}
 
 reservedProps.forEach(name => {
   properties[name] = new PropertyInfoRecord(

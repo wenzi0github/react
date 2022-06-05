@@ -8,7 +8,7 @@
 
 import * as React from 'react';
 // import {renderToString} from 'react-dom/server';
-import {pipeToNodeWritable} from 'react-dom/server';
+import {renderToPipeableStream} from 'react-dom/server';
 import App from '../src/App';
 import {DataProvider} from '../src/data';
 import {API_DELAY, ABORT_DELAY} from './delays';
@@ -20,6 +20,7 @@ let assets = {
 };
 
 module.exports = function render(url, res) {
+  const data = createServerData();
   // This is how you would wire it up previously:
   //
   // res.send(
@@ -36,18 +37,26 @@ module.exports = function render(url, res) {
     console.error('Fatal', error);
   });
   let didError = false;
-  const data = createServerData();
-  const {startWriting, abort} = pipeToNodeWritable(
+  const {pipe, abort} = renderToPipeableStream(
     <DataProvider data={data}>
       <App assets={assets} />
     </DataProvider>,
-    res,
     {
-      onReadyToStream() {
+      bootstrapScripts: [assets['main.js']],
+      onAllReady() {
+        // Full completion.
+        // You can use this for SSG or crawlers.
+      },
+      onShellReady() {
         // If something errored before we started streaming, we set the error code appropriately.
         res.statusCode = didError ? 500 : 200;
         res.setHeader('Content-type', 'text/html');
-        startWriting();
+        pipe(res);
+      },
+      onShellError(x) {
+        // Something errored before we could complete the shell so we emit an alternative shell.
+        res.statusCode = 500;
+        res.send('<!doctype><p>Error</p>');
       },
       onError(x) {
         didError = true;

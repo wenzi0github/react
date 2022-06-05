@@ -12,7 +12,7 @@ import typeof * as ExportsType from './ReactFeatureFlags.testing';
 
 export const debugRenderPhaseSideEffectsForStrictMode = false;
 export const enableDebugTracing = false;
-export const enableSchedulingProfiler = false;
+export const enableSchedulingProfiler = __PROFILE__;
 export const warnAboutDeprecatedLifecycles = true;
 export const replayFailedUnitOfWorkWithInvokeGuardedCallback = false;
 export const enableProfilerTimer = __PROFILE__;
@@ -20,11 +20,10 @@ export const enableProfilerCommitHooks = __PROFILE__;
 export const enableProfilerNestedUpdatePhase = __PROFILE__;
 export const enableProfilerNestedUpdateScheduledHook = false;
 export const enableUpdaterTracking = false;
-export const enableSuspenseServerRenderer = false;
-export const enableSelectiveHydration = false;
-export const enableLazyElements = false;
-export const enableCache = false;
+export const enableCache = __EXPERIMENTAL__;
+export const enableCacheElement = __EXPERIMENTAL__;
 export const disableJavaScriptURLs = false;
+export const disableCommentsAsDOMContainers = true;
 export const disableInputAttributeSyncing = false;
 export const enableSchedulerDebugging = false;
 export const enableScopeAPI = false;
@@ -37,8 +36,12 @@ export const disableSchedulerTimeoutBasedOnReactExpirationTime = false;
 export const enableTrustedTypesIntegration = false;
 export const disableTextareaChildren = false;
 export const disableModulePatternComponents = false;
-export const warnUnstableRenderSubtreeIntoContainer = false;
 export const warnAboutSpreadingKeyToJSX = false;
+export const enableSuspenseAvoidThisFallback = false;
+export const enableSuspenseAvoidThisFallbackFizz = false;
+export const enableCPUSuspense = false;
+export const enableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay = true;
+export const enableClientRenderFallbackOnTextMismatch = true;
 export const enableComponentStackLocations = true;
 export const enableLegacyFBSupport = false;
 export const enableFilterEmptyStringAttributesDOM = false;
@@ -54,12 +57,19 @@ export const enableStrictEffects = false;
 export const createRootStrictEffectsByDefault = false;
 export const enableUseRefAccessWarning = false;
 
-export const enableRecursiveCommitTraversal = false;
 export const disableSchedulerTimeoutInWorkLoop = false;
 export const enableLazyContextPropagation = false;
+export const enableLegacyHidden = false;
 export const enableSyncDefaultUpdates = true;
 export const allowConcurrentByDefault = false;
-export const enablePersistentOffscreenHostContainer = false;
+export const enableCustomElementPropertySupport = false;
+
+export const consoleManagedByDevToolsDuringStrictMode = false;
+export const enableServerContext = false;
+export const enableUseMutableSource = false;
+
+export const enableTransitionTracing = false;
+export const enableSymbolFallbackForWWW = false;
 
 // Flow magic to verify the exports of this file match the original version.
 // eslint-disable-next-line no-unused-vars

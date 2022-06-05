@@ -11,6 +11,9 @@ import type {ReactNodeList, Wakeable} from 'shared/ReactTypes';
 import type {Fiber} from './ReactInternalTypes';
 import type {SuspenseInstance} from './ReactFiberHostConfig';
 import type {Lane} from './ReactFiberLane.new';
+import type {TreeContext} from './ReactFiberTreeContext.new';
+
+import {enableSuspenseAvoidThisFallback} from 'shared/ReactFeatureFlags';
 import {SuspenseComponent, SuspenseListComponent} from './ReactWorkTags';
 import {NoFlags, DidCapture} from './ReactFiberFlags';
 import {
@@ -26,6 +29,7 @@ export type SuspenseProps = {|
   suspenseCallback?: (Set<Wakeable> | null) => mixed,
 
   unstable_expectedLoadTime?: number,
+  unstable_name?: string,
 |};
 
 // A null SuspenseState represents an unsuspended normal Suspense boundary.
@@ -40,6 +44,7 @@ export type SuspenseState = {|
   // here to indicate that it is dehydrated (flag) and for quick access
   // to check things like isSuspenseInstancePending.
   dehydrated: null | SuspenseInstance,
+  treeContext: null | TreeContext,
   // Represents the lane we should attempt to hydrate a dehydrated boundary at.
   // OffscreenLane is the default for dehydrated boundaries.
   // NoLane is the default for normal boundaries, which turns into "normal" pri.
@@ -78,7 +83,10 @@ export function shouldCaptureSuspense(
   }
   const props = workInProgress.memoizedProps;
   // Regular boundaries always capture.
-  if (props.unstable_avoidThisFallback !== true) {
+  if (
+    !enableSuspenseAvoidThisFallback ||
+    props.unstable_avoidThisFallback !== true
+  ) {
     return true;
   }
   // If it's a boundary we should avoid, then we prefer to bubble up to the
