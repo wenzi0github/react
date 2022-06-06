@@ -133,9 +133,9 @@ function warnIfStringRefCannotBeAutoConverted(config) {
  * 翻译：工厂模式来创建React元素，这里不再是class模式，不用再使用new进行初始化。
  * 同样的，instanceof方法也不再其作用，取而代之的是判断 $$typeof 属性是否为 Symbol.for('react.element')，
  * 来判断该元素是否为React元素。
- * @param {*} type
- * @param {*} props
- * @param {*} key
+ * @param {string} type dom元素
+ * @param {object} props dom元素上的属性
+ * @param {string} key 该元素的标记
  * @param {string|object} ref
  * @param {*} owner
  * @param {*} self A *temporary* helper to detect places where `this` is
@@ -150,7 +150,8 @@ function warnIfStringRefCannotBeAutoConverted(config) {
 const ReactElement = function(type, key, ref, self, source, owner, props) {
   const element = {
     // This tag allows us to uniquely identify this as a React Element
-    $$typeof: REACT_ELEMENT_TYPE,
+    // 这个标签允许我们将它唯一地标识为一个 React 元素
+    $$typeof: REACT_ELEMENT_TYPE, // Symbol.for('react.element')
 
     // Built-in properties that belong on the element
     type: type,
@@ -195,6 +196,7 @@ const ReactElement = function(type, key, ref, self, source, owner, props) {
       value: source,
     });
     if (Object.freeze) {
+      // 冻结对象，该对象不再可以被修改
       Object.freeze(element.props);
       Object.freeze(element);
     }
@@ -248,6 +250,8 @@ export function jsx(type, config, maybeKey) {
       hasOwnProperty.call(config, propName) &&
       !RESERVED_PROPS.hasOwnProperty(propName)
     ) {
+      // 将config中的属性给了props
+      // 这里要排除掉 RESERVED_PROPS 里指定的属性，如key, ref, __self 和 __source
       props[propName] = config[propName];
     }
   }
@@ -262,6 +266,7 @@ export function jsx(type, config, maybeKey) {
     }
   }
 
+  // props处理完成后，则调用ReactElement
   return ReactElement(
     type,
     key,
@@ -360,6 +365,9 @@ export function jsxDEV(type, config, maybeKey, source, self) {
 /**
  * Create and return a new ReactElement of the given type.
  * See https://reactjs.org/docs/react-api.html#createelement
+ * @param {string} type dom元素的类型，如div, span等
+ * @param {?object} config 元素的属性，可以为空
+ * @param {?any[]} children 子元素，可以为空
  */
 export function createElement(type, config, children) {
   let propName;
