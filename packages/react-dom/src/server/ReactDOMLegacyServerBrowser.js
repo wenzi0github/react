@@ -8,7 +8,6 @@
  */
 
 import ReactVersion from 'shared/ReactVersion';
-import invariant from 'shared/invariant';
 
 import type {ReactNodeList} from 'shared/ReactTypes';
 
@@ -54,12 +53,11 @@ function renderToStringImpl(
   };
 
   let readyToStream = false;
-  function onReadyToStream() {
+  function onShellReady() {
     readyToStream = true;
   }
   const request = createRequest(
     children,
-    destination,
     createResponseState(
       generateStaticMarkup,
       options ? options.identifierPrefix : undefined,
@@ -68,23 +66,30 @@ function renderToStringImpl(
     Infinity,
     onError,
     undefined,
-    onReadyToStream,
+    onShellReady,
+    undefined,
+    undefined,
   );
   startWork(request);
   // If anything suspended and is still pending, we'll abort it before writing.
   // That way we write only client-rendered boundaries from the start.
   abort(request);
-  startFlowing(request);
+  startFlowing(request, destination);
   if (didFatal) {
     throw fatalError;
   }
-  invariant(
-    readyToStream,
-    'A React component suspended while rendering, but no fallback UI was specified.\n' +
-      '\n' +
-      'Add a <Suspense fallback=...> component higher in the tree to ' +
-      'provide a loading indicator or placeholder to display.',
-  );
+
+  if (!readyToStream) {
+    // Note: This error message is the one we use on the client. It doesn't
+    // really make sense here. But this is the legacy server renderer, anyway.
+    // We're going to delete it soon.
+    throw new Error(
+      'A component suspended while responding to synchronous input. This ' +
+        'will cause the UI to be replaced with a loading indicator. To fix, ' +
+        'updates that suspend should be wrapped with startTransition.',
+    );
+  }
+
   return result;
 }
 
@@ -103,16 +108,14 @@ function renderToStaticMarkup(
 }
 
 function renderToNodeStream() {
-  invariant(
-    false,
+  throw new Error(
     'ReactDOMServer.renderToNodeStream(): The streaming API is not available ' +
       'in the browser. Use ReactDOMServer.renderToString() instead.',
   );
 }
 
 function renderToStaticNodeStream() {
-  invariant(
-    false,
+  throw new Error(
     'ReactDOMServer.renderToStaticNodeStream(): The streaming API is not available ' +
       'in the browser. Use ReactDOMServer.renderToStaticMarkup() instead.',
   );

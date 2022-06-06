@@ -8,8 +8,6 @@
  * @flow strict-local
  */
 
-/* eslint-disable react-internal/invariant-args */
-
 'use strict';
 
 import {type ViewConfig} from './ReactNativeTypes';
@@ -21,6 +19,7 @@ const customBubblingEventTypes: {
     phasedRegistrationNames: $ReadOnly<{|
       captured: string,
       bubbled: string,
+      skipBubbling?: ?boolean,
     |}>,
   |}>,
   ...,

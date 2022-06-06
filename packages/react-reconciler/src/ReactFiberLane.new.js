@@ -8,6 +8,7 @@
  */
 
 import type {FiberRoot} from './ReactInternalTypes';
+import type {Transition} from './ReactFiberTracingMarkerComponent.new';
 
 // TODO: Ideally these types would be opaque but that doesn't work well with
 // our reconciler fork infra, since these leak into non-reconciler packages.
@@ -17,15 +18,16 @@ export type Lane = number;
 export type LaneMap<T> = Array<T>;
 
 import {
-  enableCache,
   enableSchedulingProfiler,
   enableUpdaterTracking,
   allowConcurrentByDefault,
+  enableTransitionTracing,
 } from 'shared/ReactFeatureFlags';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook.new';
 import {ConcurrentUpdatesByDefaultMode, NoMode} from './ReactTypeOfMode';
+import {clz32} from './clz32';
 
-// Lane values below should be kept in sync with getLabelForLane(), used by react-devtools-scheduling-profiler.
+// Lane values below should be kept in sync with getLabelForLane(), used by react-devtools-timeline.
 // If those values are changed that package should be rebuilt and redeployed.
 
 export const TotalLanes = 31;
@@ -36,10 +38,10 @@ export const NoLane: Lane = /*                          */ 0b0000000000000000000
 export const SyncLane: Lane = /*                        */ 0b0000000000000000000000000000001;
 
 export const InputContinuousHydrationLane: Lane = /*    */ 0b0000000000000000000000000000010;
-export const InputContinuousLane: Lanes = /*            */ 0b0000000000000000000000000000100;
+export const InputContinuousLane: Lane = /*             */ 0b0000000000000000000000000000100;
 
 export const DefaultHydrationLane: Lane = /*            */ 0b0000000000000000000000000001000;
-export const DefaultLane: Lanes = /*                    */ 0b0000000000000000000000000010000;
+export const DefaultLane: Lane = /*                     */ 0b0000000000000000000000000010000;
 
 const TransitionHydrationLane: Lane = /*                */ 0b0000000000000000000000000100000;
 const TransitionLanes: Lanes = /*                       */ 0b0000000001111111111111111000000;
@@ -71,14 +73,14 @@ export const SomeRetryLane: Lane = RetryLane1;
 
 export const SelectiveHydrationLane: Lane = /*          */ 0b0001000000000000000000000000000;
 
-const NonIdleLanes = /*                                 */ 0b0001111111111111111111111111111;
+const NonIdleLanes: Lanes = /*                          */ 0b0001111111111111111111111111111;
 
 export const IdleHydrationLane: Lane = /*               */ 0b0010000000000000000000000000000;
-export const IdleLane: Lanes = /*                       */ 0b0100000000000000000000000000000;
+export const IdleLane: Lane = /*                        */ 0b0100000000000000000000000000000;
 
 export const OffscreenLane: Lane = /*                   */ 0b1000000000000000000000000000000;
 
-// This function is used for the experimental scheduling profiler (react-devtools-scheduling-profiler)
+// This function is used for the experimental timeline (react-devtools-timeline)
 // It should be kept in sync with the Lanes values above.
 export function getLabelForLane(lane: Lane): string | void {
   if (enableSchedulingProfiler) {
@@ -443,41 +445,48 @@ export function getLanesToRetrySynchronouslyOnError(root: FiberRoot): Lanes {
   return NoLanes;
 }
 
+export function includesSyncLane(lanes: Lanes) {
+  return (lanes & SyncLane) !== NoLanes;
+}
+
 export function includesNonIdleWork(lanes: Lanes) {
   return (lanes & NonIdleLanes) !== NoLanes;
 }
 export function includesOnlyRetries(lanes: Lanes) {
   return (lanes & RetryLanes) === lanes;
 }
+export function includesOnlyNonUrgentLanes(lanes: Lanes) {
+  const UrgentLanes = SyncLane | InputContinuousLane | DefaultLane;
+  return (lanes & UrgentLanes) === NoLanes;
+}
 export function includesOnlyTransitions(lanes: Lanes) {
   return (lanes & TransitionLanes) === lanes;
 }
 
-export function shouldTimeSlice(root: FiberRoot, lanes: Lanes) {
-  if ((lanes & root.expiredLanes) !== NoLanes) {
-    // At least one of these lanes expired. To prevent additional starvation,
-    // finish rendering without yielding execution.
-    return false;
-  }
-
+export function includesBlockingLane(root: FiberRoot, lanes: Lanes) {
   if (
     allowConcurrentByDefault &&
     (root.current.mode & ConcurrentUpdatesByDefaultMode) !== NoMode
   ) {
     // Concurrent updates by default always use time slicing.
-    return true;
+    return false;
   }
-
   const SyncDefaultLanes =
     InputContinuousHydrationLane |
     InputContinuousLane |
     DefaultHydrationLane |
     DefaultLane;
-  return (lanes & SyncDefaultLanes) === NoLanes;
+  return (lanes & SyncDefaultLanes) !== NoLanes;
+}
+
+export function includesExpiredLane(root: FiberRoot, lanes: Lanes) {
+  // This is a separate check from includesBlockingLane because a lane can
+  // expire after a render has already started.
+  return (lanes & root.expiredLanes) !== NoLanes;
 }
 
 export function isTransitionLane(lane: Lane) {
-  return (lane & TransitionLanes) !== 0;
+  return (lane & TransitionLanes) !== NoLanes;
 }
 
 export function claimNextTransitionLane(): Lane {
@@ -486,7 +495,7 @@ export function claimNextTransitionLane(): Lane {
   // run out of lanes and cycle back to the beginning.
   const lane = nextTransitionLane;
   nextTransitionLane <<= 1;
-  if ((nextTransitionLane & TransitionLanes) === 0) {
+  if ((nextTransitionLane & TransitionLanes) === NoLanes) {
     nextTransitionLane = TransitionLane1;
   }
   return lane;
@@ -495,7 +504,7 @@ export function claimNextTransitionLane(): Lane {
 export function claimNextRetryLane(): Lane {
   const lane = nextRetryLane;
   nextRetryLane <<= 1;
-  if ((nextRetryLane & RetryLanes) === 0) {
+  if ((nextRetryLane & RetryLanes) === NoLanes) {
     nextRetryLane = RetryLane1;
   }
   return lane;
@@ -628,22 +637,13 @@ export function markRootFinished(root: FiberRoot, remainingLanes: Lanes) {
   root.pendingLanes = remainingLanes;
 
   // Let's try everything again
-  root.suspendedLanes = 0;
-  root.pingedLanes = 0;
+  root.suspendedLanes = NoLanes;
+  root.pingedLanes = NoLanes;
 
   root.expiredLanes &= remainingLanes;
   root.mutableReadLanes &= remainingLanes;
 
   root.entangledLanes &= remainingLanes;
-
-  if (enableCache) {
-    const pooledCacheLanes = (root.pooledCacheLanes &= remainingLanes);
-    if (pooledCacheLanes === NoLanes) {
-      // None of the remaining work relies on the cache pool. Clear it so
-      // subsequent requests get a new cache.
-      root.pooledCache = null;
-    }
-  }
 
   const entanglements = root.entanglements;
   const eventTimes = root.eventTimes;
@@ -803,16 +803,67 @@ export function movePendingFibersToMemoized(root: FiberRoot, lanes: Lanes) {
   }
 }
 
-const clz32 = Math.clz32 ? Math.clz32 : clz32Fallback;
+export function addTransitionToLanesMap(
+  root: FiberRoot,
+  transition: Transition,
+  lane: Lane,
+) {
+  if (enableTransitionTracing) {
+    const transitionLanesMap = root.transitionLanes;
+    const index = laneToIndex(lane);
+    let transitions = transitionLanesMap[index];
+    if (transitions === null) {
+      transitions = [];
+    }
+    transitions.push(transition);
 
-// Count leading zeros. Only used on lanes, so assume input is an integer.
-// Based on:
-// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/clz32
-const log = Math.log;
-const LN2 = Math.LN2;
-function clz32Fallback(lanes: Lanes | Lane) {
-  if (lanes === 0) {
-    return 32;
+    transitionLanesMap[index] = transitions;
   }
-  return (31 - ((log(lanes) / LN2) | 0)) | 0;
+}
+
+export function getTransitionsForLanes(
+  root: FiberRoot,
+  lanes: Lane | Lanes,
+): Array<Transition> | null {
+  if (!enableTransitionTracing) {
+    return null;
+  }
+
+  const transitionsForLanes = [];
+  while (lanes > 0) {
+    const index = laneToIndex(lanes);
+    const lane = 1 << index;
+    const transitions = root.transitionLanes[index];
+    if (transitions !== null) {
+      transitions.forEach(transition => {
+        transitionsForLanes.push(transition);
+      });
+    }
+
+    lanes &= ~lane;
+  }
+
+  if (transitionsForLanes.length === 0) {
+    return null;
+  }
+
+  return transitionsForLanes;
+}
+
+export function clearTransitionsForLanes(root: FiberRoot, lanes: Lane | Lanes) {
+  if (!enableTransitionTracing) {
+    return;
+  }
+
+  while (lanes > 0) {
+    const index = laneToIndex(lanes);
+    const lane = 1 << index;
+
+    const transitions = root.transitionLanes[index];
+    if (transitions !== null) {
+      root.transitionLanes[index] = null;
+    }
+
+    lanes &= ~lane;
+  }
 }

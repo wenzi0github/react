@@ -13,10 +13,15 @@ import type {
   Destination,
 } from './ReactFlightDOMRelayServerHostConfig';
 
-import {createRequest, startWork} from 'react-server/src/ReactFlightServer';
+import {
+  createRequest,
+  startWork,
+  startFlowing,
+} from 'react-server/src/ReactFlightServer';
 
 type Options = {
   onError?: (error: mixed) => void,
+  identifierPrefix?: string,
 };
 
 function render(
@@ -27,11 +32,13 @@ function render(
 ): void {
   const request = createRequest(
     model,
-    destination,
     config,
     options ? options.onError : undefined,
+    undefined, // not currently set up to supply context overrides
+    options ? options.identifierPrefix : undefined,
   );
   startWork(request);
+  startFlowing(request, destination);
 }
 
 export {render};

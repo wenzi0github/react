@@ -48,6 +48,21 @@ describe('ReactDOMServerFB', () => {
     expect(result).toMatchInlineSnapshot(`"<div>hello world</div>"`);
   });
 
+  it('should emit bootstrap script src at the end', () => {
+    const stream = ReactDOMServer.renderToStream(<div>hello world</div>, {
+      bootstrapScriptContent: 'INIT();',
+      bootstrapScripts: ['init.js'],
+      bootstrapModules: ['init.mjs'],
+      onError(x) {
+        console.error(x);
+      },
+    });
+    const result = readResult(stream);
+    expect(result).toMatchInlineSnapshot(
+      `"<div>hello world</div><script>INIT();</script><script src=\\"init.js\\" async=\\"\\"></script><script type=\\"module\\" src=\\"init.mjs\\" async=\\"\\"></script>"`,
+    );
+  });
+
   it('emits all HTML as one unit if we wait until the end to start', async () => {
     let hasLoaded = false;
     let resolve;
@@ -78,9 +93,7 @@ describe('ReactDOMServerFB', () => {
     await jest.runAllTimers();
 
     const result = readResult(stream);
-    expect(result).toMatchInlineSnapshot(
-      `"<div><!--$-->Done<!-- --><!--/$--></div>"`,
-    );
+    expect(result).toMatchInlineSnapshot(`"<div><!--$-->Done<!--/$--></div>"`);
   });
 
   it('should throw an error when an error is thrown at the root', () => {
@@ -156,6 +169,7 @@ describe('ReactDOMServerFB', () => {
   });
 
   it('should be able to complete by aborting even if the promise never resolves', () => {
+    const errors = [];
     const stream = ReactDOMServer.renderToStream(
       <div>
         <Suspense fallback={<div>Loading</div>}>
@@ -164,7 +178,7 @@ describe('ReactDOMServerFB', () => {
       </div>,
       {
         onError(x) {
-          console.error(x);
+          errors.push(x.message);
         },
       },
     );
@@ -176,5 +190,9 @@ describe('ReactDOMServerFB', () => {
 
     const remaining = readResult(stream);
     expect(remaining).toEqual('');
+
+    expect(errors).toEqual([
+      'This Suspense boundary was aborted by the server',
+    ]);
   });
 });

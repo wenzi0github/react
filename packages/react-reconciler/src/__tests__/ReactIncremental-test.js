@@ -270,7 +270,7 @@ describe('ReactIncremental', () => {
     expect(inst.state).toEqual({text: 'bar', text2: 'baz'});
   });
 
-  // @gate experimental || www
+  // @gate www
   it('can deprioritize unfinished work and resume it later', () => {
     function Bar(props) {
       Scheduler.unstable_yieldValue('Bar');
@@ -316,7 +316,7 @@ describe('ReactIncremental', () => {
     expect(Scheduler).toFlushAndYield(['Middle', 'Middle']);
   });
 
-  // @gate experimental || www
+  // @gate www
   it('can deprioritize a tree from without dropping work', () => {
     function Bar(props) {
       Scheduler.unstable_yieldValue('Bar');
@@ -1110,7 +1110,7 @@ describe('ReactIncremental', () => {
       }
       render() {
         Scheduler.unstable_yieldValue('Bar:' + this.props.x);
-        return <span prop={'' + (this.props.x === this.state.y)} />;
+        return <span prop={String(this.props.x === this.state.y)} />;
       }
     }
 
@@ -1159,7 +1159,7 @@ describe('ReactIncremental', () => {
         Scheduler.unstable_yieldValue(
           'Bar:' + this.props.x + '-' + this.props.step,
         );
-        return <span prop={'' + (this.props.x === this.state.y)} />;
+        return <span prop={String(this.props.x === this.state.y)} />;
       }
     }
 
@@ -1999,7 +1999,7 @@ describe('ReactIncremental', () => {
     });
   }
 
-  // @gate experimental || www
+  // @gate www
   it('provides context when reusing work', () => {
     class Intl extends React.Component {
       static childContextTypes = {

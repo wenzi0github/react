@@ -19,8 +19,7 @@ import {StoreContext} from '../context';
 
 import type {ProfilingDataFrontend} from './types';
 
-// TODO (scheduling profiler) Should this be its own context?
-export type TabID = 'flame-chart' | 'ranked-chart' | 'scheduling-profiler';
+export type TabID = 'flame-chart' | 'ranked-chart' | 'timeline';
 
 export type Context = {|
   // Which tab is selected in the Profiler UI?
@@ -96,18 +95,18 @@ function ProfilerContextController({children}: Props) {
         isProcessingData: profilerStore.isProcessingData,
         isProfiling: profilerStore.isProfiling,
         profilingData: profilerStore.profilingData,
-        supportsProfiling: store.supportsProfiling,
+        supportsProfiling: store.rootSupportsBasicProfiling,
       }),
       subscribe: (callback: Function) => {
         profilerStore.addListener('profilingData', callback);
         profilerStore.addListener('isProcessingData', callback);
         profilerStore.addListener('isProfiling', callback);
-        store.addListener('supportsProfiling', callback);
+        store.addListener('rootSupportsBasicProfiling', callback);
         return () => {
           profilerStore.removeListener('profilingData', callback);
           profilerStore.removeListener('isProcessingData', callback);
           profilerStore.removeListener('isProfiling', callback);
-          store.removeListener('supportsProfiling', callback);
+          store.removeListener('rootSupportsBasicProfiling', callback);
         };
       },
     }),

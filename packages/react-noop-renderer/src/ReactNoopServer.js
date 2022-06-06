@@ -53,7 +53,22 @@ type Destination = {
 
 const POP = Buffer.from('/', 'utf8');
 
-let opaqueID = 0;
+function write(destination: Destination, buffer: Uint8Array): void {
+  const stack = destination.stack;
+  if (buffer === POP) {
+    stack.pop();
+    return;
+  }
+  // We assume one chunk is one instance.
+  const instance = JSON.parse(Buffer.from((buffer: any)).toString('utf8'));
+  if (stack.length === 0) {
+    destination.root = instance;
+  } else {
+    const parent = stack[stack.length - 1];
+    parent.children.push(instance);
+  }
+  stack.push(instance);
+}
 
 const ReactNoopServer = ReactFizzServer({
   scheduleWork(callback: () => void) {
@@ -61,45 +76,40 @@ const ReactNoopServer = ReactFizzServer({
   },
   beginWriting(destination: Destination): void {},
   writeChunk(destination: Destination, buffer: Uint8Array): void {
-    const stack = destination.stack;
-    if (buffer === POP) {
-      stack.pop();
-      return;
-    }
-    // We assume one chunk is one instance.
-    const instance = JSON.parse(Buffer.from((buffer: any)).toString('utf8'));
-    if (stack.length === 0) {
-      destination.root = instance;
-    } else {
-      const parent = stack[stack.length - 1];
-      parent.children.push(instance);
-    }
-    stack.push(instance);
+    write(destination, buffer);
+  },
+  writeChunkAndReturn(destination: Destination, buffer: Uint8Array): boolean {
+    write(destination, buffer);
+    return true;
   },
   completeWriting(destination: Destination): void {},
   close(destination: Destination): void {},
   closeWithError(destination: Destination, error: mixed): void {},
   flushBuffered(destination: Destination): void {},
 
-  createSuspenseBoundaryID(): SuspenseInstance {
+  UNINITIALIZED_SUSPENSE_BOUNDARY_ID: null,
+
+  assignSuspenseBoundaryID(): SuspenseInstance {
     // The ID is a pointer to the boundary itself.
     return {state: 'pending', children: []};
-  },
-
-  makeServerID(): number {
-    return opaqueID++;
   },
 
   getChildFormatContext(): null {
     return null;
   },
 
-  pushTextInstance(target: Array<Uint8Array>, text: string): void {
+  pushTextInstance(
+    target: Array<Uint8Array>,
+    text: string,
+    responseState: ResponseState,
+    textEmbedded: boolean,
+  ): boolean {
     const textInstance: TextInstance = {
       text,
       hidden: false,
     };
     target.push(Buffer.from(JSON.stringify(textInstance), 'utf8'), POP);
+    return false;
   },
   pushStartInstance(
     target: Array<Uint8Array>,
@@ -122,6 +132,21 @@ const ReactNoopServer = ReactFizzServer({
     props: Object,
   ): void {
     target.push(POP);
+  },
+
+  // This is a noop in ReactNoop
+  pushSegmentFinale(
+    target: Array<Uint8Array>,
+    responseState: ResponseState,
+    lastPushedText: boolean,
+    textEmbedded: boolean,
+  ): void {},
+
+  writeCompletedRoot(
+    destination: Destination,
+    responseState: ResponseState,
+  ): boolean {
+    return true;
   },
 
   writePlaceholder(
@@ -240,9 +265,9 @@ const ReactNoopServer = ReactFizzServer({
 
 type Options = {
   progressiveChunkSize?: number,
-  onReadyToStream?: () => void,
-  onCompleteAll?: () => void,
-  onError?: (error: mixed) => void,
+  onShellReady?: () => void,
+  onAllReady?: () => void,
+  onError?: (error: mixed) => ?string,
 };
 
 function render(children: React$Element<any>, options?: Options): Destination {
@@ -257,16 +282,15 @@ function render(children: React$Element<any>, options?: Options): Destination {
   };
   const request = ReactNoopServer.createRequest(
     children,
-    destination,
     null,
     null,
     options ? options.progressiveChunkSize : undefined,
     options ? options.onError : undefined,
-    options ? options.onCompleteAll : undefined,
-    options ? options.onReadyToStream : undefined,
+    options ? options.onAllReady : undefined,
+    options ? options.onShellReady : undefined,
   );
   ReactNoopServer.startWork(request);
-  ReactNoopServer.startFlowing(request);
+  ReactNoopServer.startFlowing(request, destination);
   return destination;
 }
 

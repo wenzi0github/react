@@ -195,6 +195,12 @@ function sendAccessibilityEvent(handle: any, eventType: string) {
   }
 }
 
+function onRecoverableError(error) {
+  // TODO: Expose onRecoverableError option to userspace
+  // eslint-disable-next-line react-internal/no-production-logging, react-internal/warning-args
+  console.error(error);
+}
+
 function render(
   element: Element<ElementType>,
   containerTag: number,
@@ -209,9 +215,11 @@ function render(
     root = createContainer(
       containerTag,
       concurrentRoot ? ConcurrentRoot : LegacyRoot,
-      false,
       null,
       false,
+      null,
+      '',
+      onRecoverableError,
       null,
     );
     roots.set(containerTag, root);

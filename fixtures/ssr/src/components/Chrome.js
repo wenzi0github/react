@@ -1,8 +1,4 @@
-import React, {
-  Component,
-  Suspense,
-  unstable_startTransition as startTransition,
-} from 'react';
+import React, {Component, Suspense, startTransition} from 'react';
 
 import Theme, {ThemeToggleButton} from './Theme';
 
@@ -46,7 +42,6 @@ export default class Chrome extends Component {
               __html: `assetManifest = ${JSON.stringify(assets)};`,
             }}
           />
-          <script src={assets['main.js']} />
         </body>
       </html>
     );

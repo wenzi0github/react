@@ -7,7 +7,6 @@
  * @flow
  */
 
-import type {Dispatcher as DispatcherType} from 'react-reconciler/src/ReactInternalTypes';
 import type {
   Destination,
   Chunk,
@@ -16,17 +15,23 @@ import type {
   ModuleReference,
   ModuleKey,
 } from './ReactFlightServerConfig';
+import type {ContextSnapshot} from './ReactFlightNewContext';
+import type {
+  ReactProviderType,
+  ServerContextJSONValue,
+} from 'shared/ReactTypes';
 
 import {
   scheduleWork,
   beginWriting,
-  writeChunk,
+  writeChunkAndReturn,
   completeWriting,
   flushBuffered,
   close,
   closeWithError,
   processModelChunk,
   processModuleChunk,
+  processProviderChunk,
   processSymbolChunk,
   processErrorChunk,
   resolveModuleMetaData,
@@ -35,15 +40,31 @@ import {
 } from './ReactFlightServerConfig';
 
 import {
+  Dispatcher,
+  getCurrentCache,
+  prepareToUseHooksForRequest,
+  resetHooksForRequest,
+  setCurrentCache,
+} from './ReactFlightHooks';
+import {
+  pushProvider,
+  popProvider,
+  switchContext,
+  getActiveContext,
+  rootContextSnapshot,
+} from './ReactFlightNewContext';
+
+import {
   REACT_ELEMENT_TYPE,
   REACT_FORWARD_REF_TYPE,
   REACT_FRAGMENT_TYPE,
   REACT_LAZY_TYPE,
   REACT_MEMO_TYPE,
+  REACT_PROVIDER_TYPE,
 } from 'shared/ReactSymbols';
 
+import {getOrCreateServerContext} from 'shared/ReactServerContextRegistry';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
-import invariant from 'shared/invariant';
 import isArray from 'shared/isArray';
 
 type ReactJSONValue =
@@ -69,10 +90,13 @@ type Segment = {
   id: number,
   model: ReactModel,
   ping: () => void,
+  context: ContextSnapshot,
 };
 
 export type Request = {
-  destination: Destination,
+  status: 0 | 1 | 2,
+  fatalError: mixed,
+  destination: null | Destination,
   bundlerConfig: BundlerConfig,
   cache: Map<Function, mixed>,
   nextChunkId: number,
@@ -83,26 +107,36 @@ export type Request = {
   completedErrorChunks: Array<Chunk>,
   writtenSymbols: Map<Symbol, number>,
   writtenModules: Map<ModuleKey, number>,
+  writtenProviders: Map<string, number>,
+  identifierPrefix: string,
+  identifierCount: number,
   onError: (error: mixed) => void,
-  flowing: boolean,
   toJSON: (key: string, value: ReactModel) => ReactJSONValue,
 };
 
 const ReactCurrentDispatcher = ReactSharedInternals.ReactCurrentDispatcher;
 
 function defaultErrorHandler(error: mixed) {
-  console['error'](error); // Don't transform to our wrapper
+  console['error'](error);
+  // Don't transform to our wrapper
 }
+
+const OPEN = 0;
+const CLOSING = 1;
+const CLOSED = 2;
 
 export function createRequest(
   model: ReactModel,
-  destination: Destination,
   bundlerConfig: BundlerConfig,
   onError: void | ((error: mixed) => void),
+  context?: Array<[string, ServerContextJSONValue]>,
+  identifierPrefix?: string,
 ): Request {
   const pingedSegments = [];
   const request = {
-    destination,
+    status: OPEN,
+    fatalError: null,
+    destination: null,
     bundlerConfig,
     cache: new Map(),
     nextChunkId: 0,
@@ -113,17 +147,28 @@ export function createRequest(
     completedErrorChunks: [],
     writtenSymbols: new Map(),
     writtenModules: new Map(),
+    writtenProviders: new Map(),
+    identifierPrefix: identifierPrefix || '',
+    identifierCount: 1,
     onError: onError === undefined ? defaultErrorHandler : onError,
-    flowing: false,
     toJSON: function(key: string, value: ReactModel): ReactJSONValue {
       return resolveModelToJSON(request, this, key, value);
     },
   };
   request.pendingChunks++;
-  const rootSegment = createSegment(request, model);
+  const rootContext = createRootContext(context);
+  const rootSegment = createSegment(request, model, rootContext);
   pingedSegments.push(rootSegment);
   return request;
 }
+
+function createRootContext(
+  reqContext?: Array<[string, ServerContextJSONValue]>,
+) {
+  return importServerContexts(reqContext);
+}
+
+const POP = {};
 
 function attemptResolveElement(
   type: any,
@@ -135,8 +180,7 @@ function attemptResolveElement(
     // When the ref moves to the regular props object this will implicitly
     // throw for functions. We could probably relax it to a DEV warning for other
     // cases.
-    invariant(
-      false,
+    throw new Error(
       'Refs cannot be used in server components, nor passed to client components.',
     );
   }
@@ -163,6 +207,12 @@ function attemptResolveElement(
       return [REACT_ELEMENT_TYPE, type, key, props];
     }
     switch (type.$$typeof) {
+      case REACT_LAZY_TYPE: {
+        const payload = type._payload;
+        const init = type._init;
+        const wrappedType = init(payload);
+        return attemptResolveElement(wrappedType, key, ref, props);
+      }
       case REACT_FORWARD_REF_TYPE: {
         const render = type.render;
         return render(props, undefined);
@@ -170,12 +220,34 @@ function attemptResolveElement(
       case REACT_MEMO_TYPE: {
         return attemptResolveElement(type.type, key, ref, props);
       }
+      case REACT_PROVIDER_TYPE: {
+        pushProvider(type._context, props.value);
+        if (__DEV__) {
+          const extraKeys = Object.keys(props).filter(value => {
+            if (value === 'children' || value === 'value') {
+              return false;
+            }
+            return true;
+          });
+          if (extraKeys.length !== 0) {
+            console.error(
+              'ServerContext can only have a value prop and children. Found: %s',
+              JSON.stringify(extraKeys),
+            );
+          }
+        }
+        return [
+          REACT_ELEMENT_TYPE,
+          type,
+          key,
+          // Rely on __popProvider being serialized last to pop the provider.
+          {value: props.value, children: props.children, __pop: POP},
+        ];
+      }
     }
   }
-  invariant(
-    false,
-    'Unsupported server component type: %s',
-    describeValueForErrorMessage(type),
+  throw new Error(
+    `Unsupported server component type: ${describeValueForErrorMessage(type)}`,
   );
 }
 
@@ -187,11 +259,16 @@ function pingSegment(request: Request, segment: Segment): void {
   }
 }
 
-function createSegment(request: Request, model: ReactModel): Segment {
+function createSegment(
+  request: Request,
+  model: ReactModel,
+  context: ContextSnapshot,
+): Segment {
   const id = request.nextChunkId++;
   const segment = {
     id,
     model,
+    context,
     ping: () => pingSegment(request, segment),
   };
   return segment;
@@ -219,7 +296,6 @@ function isObjectPrototype(object): boolean {
   if (!object) {
     return false;
   }
-  // $FlowFixMe
   const ObjectPrototype = Object.prototype;
   if (object === ObjectPrototype) {
     return true;
@@ -296,7 +372,7 @@ function describeValueForErrorMessage(value: ReactModel): string {
     case 'function':
       return 'function';
     default:
-      // eslint-disable-next-line
+      // eslint-disable-next-line react-internal/safe-string-coercion
       return String(value);
   }
 }
@@ -309,7 +385,6 @@ function describeObjectForErrorMessage(
 ): string {
   if (isArray(objectOrArray)) {
     let str = '[';
-    // $FlowFixMe: Should be refined by now.
     const array: $ReadOnlyArray<ReactModel> = objectOrArray;
     for (let i = 0; i < array.length; i++) {
       if (i > 0) {
@@ -334,7 +409,6 @@ function describeObjectForErrorMessage(
     return str;
   } else {
     let str = '{';
-    // $FlowFixMe: Should be refined by now.
     const object: {+[key: string | number]: ReactModel} = objectOrArray;
     const names = Object.keys(object);
     for (let i = 0; i < names.length; i++) {
@@ -363,6 +437,9 @@ function describeObjectForErrorMessage(
   }
 }
 
+let insideContextProps = null;
+let isInsideContextValue = false;
+
 export function resolveModelToJSON(
   request: Request,
   parent: {+[key: string | number]: ReactModel} | $ReadOnlyArray<ReactModel>,
@@ -388,39 +465,67 @@ export function resolveModelToJSON(
   switch (value) {
     case REACT_ELEMENT_TYPE:
       return '$';
-    case REACT_LAZY_TYPE:
-      invariant(
-        false,
-        'React Lazy Components are not yet supported on the server.',
-      );
+  }
+
+  if (__DEV__) {
+    if (
+      parent[0] === REACT_ELEMENT_TYPE &&
+      parent[1] &&
+      parent[1].$$typeof === REACT_PROVIDER_TYPE &&
+      key === '3'
+    ) {
+      insideContextProps = value;
+    } else if (insideContextProps === parent && key === 'value') {
+      isInsideContextValue = true;
+    } else if (insideContextProps === parent && key === 'children') {
+      isInsideContextValue = false;
+    }
   }
 
   // Resolve server components.
   while (
     typeof value === 'object' &&
     value !== null &&
-    value.$$typeof === REACT_ELEMENT_TYPE
+    ((value: any).$$typeof === REACT_ELEMENT_TYPE ||
+      (value: any).$$typeof === REACT_LAZY_TYPE)
   ) {
-    // TODO: Concatenate keys of parents onto children.
-    const element: React$Element<any> = (value: any);
+    if (__DEV__) {
+      if (isInsideContextValue) {
+        console.error('React elements are not allowed in ServerContext');
+      }
+    }
+
     try {
-      // Attempt to render the server component.
-      value = attemptResolveElement(
-        element.type,
-        element.key,
-        element.ref,
-        element.props,
-      );
+      switch ((value: any).$$typeof) {
+        case REACT_ELEMENT_TYPE: {
+          // TODO: Concatenate keys of parents onto children.
+          const element: React$Element<any> = (value: any);
+          // Attempt to render the server component.
+          value = attemptResolveElement(
+            element.type,
+            element.key,
+            element.ref,
+            element.props,
+          );
+          break;
+        }
+        case REACT_LAZY_TYPE: {
+          const payload = (value: any)._payload;
+          const init = (value: any)._init;
+          value = init(payload);
+          break;
+        }
+      }
     } catch (x) {
       if (typeof x === 'object' && x !== null && typeof x.then === 'function') {
         // Something suspended, we'll need to create a new segment and resolve it later.
         request.pendingChunks++;
-        const newSegment = createSegment(request, value);
+        const newSegment = createSegment(request, value, getActiveContext());
         const ping = newSegment.ping;
         x.then(ping, ping);
         return serializeByRefID(newSegment.id);
       } else {
-        reportError(request, x);
+        logRecoverableError(request, x);
         // Something errored. We'll still send everything we have up until this point.
         // We'll replace this element with a lazy reference that throws on the client
         // once it gets rendered.
@@ -477,6 +582,25 @@ export function resolveModelToJSON(
         emitErrorChunk(request, errorId, x);
         return serializeByValueID(errorId);
       }
+    } else if ((value: any).$$typeof === REACT_PROVIDER_TYPE) {
+      const providerKey = ((value: any): ReactProviderType<any>)._context
+        ._globalName;
+      const writtenProviders = request.writtenProviders;
+      let providerId = writtenProviders.get(key);
+      if (providerId === undefined) {
+        request.pendingChunks++;
+        providerId = request.nextChunkId++;
+        writtenProviders.set(providerKey, providerId);
+        emitProviderChunk(request, providerId, providerKey);
+      }
+      return serializeByValueID(providerId);
+    } else if (value === POP) {
+      popProvider();
+      if (__DEV__) {
+        insideContextProps = null;
+        isInsideContextValue = false;
+      }
+      return (undefined: any);
     }
 
     if (__DEV__) {
@@ -514,6 +638,7 @@ export function resolveModelToJSON(
         }
       }
     }
+
     return value;
   }
 
@@ -531,23 +656,25 @@ export function resolveModelToJSON(
 
   if (typeof value === 'function') {
     if (/^on[A-Z]/.test(key)) {
-      invariant(
-        false,
+      throw new Error(
         'Event handlers cannot be passed to client component props. ' +
-          'Remove %s from these props if possible: %s\n' +
+          `Remove ${describeKeyForErrorMessage(
+            key,
+          )} from these props if possible: ${describeObjectForErrorMessage(
+            parent,
+          )}
+` +
           'If you need interactivity, consider converting part of this to a client component.',
-        describeKeyForErrorMessage(key),
-        describeObjectForErrorMessage(parent),
       );
     } else {
-      invariant(
-        false,
+      throw new Error(
         'Functions cannot be passed directly to client components ' +
           "because they're not serializable. " +
-          'Remove %s (%s) from this object, or avoid the entire object: %s',
-        describeKeyForErrorMessage(key),
-        value.displayName || value.name || 'function',
-        describeObjectForErrorMessage(parent),
+          `Remove ${describeKeyForErrorMessage(key)} (${value.displayName ||
+            value.name ||
+            'function'}) from this object, or avoid the entire object: ${describeObjectForErrorMessage(
+            parent,
+          )}`,
       );
     }
   }
@@ -559,15 +686,19 @@ export function resolveModelToJSON(
       return serializeByValueID(existingId);
     }
     const name = value.description;
-    invariant(
-      Symbol.for(name) === value,
-      'Only global symbols received from Symbol.for(...) can be passed to client components. ' +
-        'The symbol Symbol.for(%s) cannot be found among global symbols. ' +
-        'Remove %s from this object, or avoid the entire object: %s',
-      value.description,
-      describeKeyForErrorMessage(key),
-      describeObjectForErrorMessage(parent),
-    );
+
+    if (Symbol.for(name) !== value) {
+      throw new Error(
+        'Only global symbols received from Symbol.for(...) can be passed to client components. ' +
+          `The symbol Symbol.for(${value.description}) cannot be found among global symbols. ` +
+          `Remove ${describeKeyForErrorMessage(
+            key,
+          )} from this object, or avoid the entire object: ${describeObjectForErrorMessage(
+            parent,
+          )}`,
+      );
+    }
+
     request.pendingChunks++;
     const symbolId = request.nextChunkId++;
     emitSymbolChunk(request, symbolId, name);
@@ -577,34 +708,40 @@ export function resolveModelToJSON(
 
   // $FlowFixMe: bigint isn't added to Flow yet.
   if (typeof value === 'bigint') {
-    invariant(
-      false,
-      'BigInt (%s) is not yet supported in client component props. ' +
-        'Remove %s from this object or use a plain number instead: %s',
-      value,
-      describeKeyForErrorMessage(key),
-      describeObjectForErrorMessage(parent),
+    throw new Error(
+      `BigInt (${value}) is not yet supported in client component props. ` +
+        `Remove ${describeKeyForErrorMessage(
+          key,
+        )} from this object or use a plain number instead: ${describeObjectForErrorMessage(
+          parent,
+        )}`,
     );
   }
 
-  invariant(
-    false,
-    'Type %s is not supported in client component props. ' +
-      'Remove %s from this object, or avoid the entire object: %s',
-    typeof value,
-    describeKeyForErrorMessage(key),
-    describeObjectForErrorMessage(parent),
+  throw new Error(
+    `Type ${typeof value} is not supported in client component props. ` +
+      `Remove ${describeKeyForErrorMessage(
+        key,
+      )} from this object, or avoid the entire object: ${describeObjectForErrorMessage(
+        parent,
+      )}`,
   );
 }
 
-function reportError(request: Request, error: mixed): void {
+function logRecoverableError(request: Request, error: mixed): void {
   const onError = request.onError;
   onError(error);
 }
 
 function fatalError(request: Request, error: mixed): void {
   // This is called outside error handling code such as if an error happens in React internals.
-  closeWithError(request.destination, error);
+  if (request.destination !== null) {
+    request.status = CLOSED;
+    closeWithError(request.destination, error);
+  } else {
+    request.status = CLOSING;
+    request.fatalError = error;
+  }
 }
 
 function emitErrorChunk(request: Request, id: number, error: mixed): void {
@@ -615,8 +752,10 @@ function emitErrorChunk(request: Request, id: number, error: mixed): void {
   let stack = '';
   try {
     if (error instanceof Error) {
-      message = '' + error.message;
-      stack = '' + error.stack;
+      // eslint-disable-next-line react-internal/safe-string-coercion
+      message = String(error.message);
+      // eslint-disable-next-line react-internal/safe-string-coercion
+      stack = String(error.stack);
     } else {
       message = 'Error: ' + (error: any);
     }
@@ -642,13 +781,23 @@ function emitSymbolChunk(request: Request, id: number, name: string): void {
   request.completedModuleChunks.push(processedChunk);
 }
 
+function emitProviderChunk(
+  request: Request,
+  id: number,
+  contextName: string,
+): void {
+  const processedChunk = processProviderChunk(request, id, contextName);
+  request.completedJSONChunks.push(processedChunk);
+}
+
 function retrySegment(request: Request, segment: Segment): void {
+  switchContext(segment.context);
   try {
     let value = segment.model;
     while (
       typeof value === 'object' &&
       value !== null &&
-      value.$$typeof === REACT_ELEMENT_TYPE
+      (value: any).$$typeof === REACT_ELEMENT_TYPE
     ) {
       // TODO: Concatenate keys of parents onto children.
       const element: React$Element<any> = (value: any);
@@ -672,7 +821,7 @@ function retrySegment(request: Request, segment: Segment): void {
       x.then(ping, ping);
       return;
     } else {
-      reportError(request, x);
+      logRecoverableError(request, x);
       // This errored, we need to serialize this error to the
       emitErrorChunk(request, segment.id, x);
     }
@@ -681,9 +830,10 @@ function retrySegment(request: Request, segment: Segment): void {
 
 function performWork(request: Request): void {
   const prevDispatcher = ReactCurrentDispatcher.current;
-  const prevCache = currentCache;
+  const prevCache = getCurrentCache();
   ReactCurrentDispatcher.current = Dispatcher;
-  currentCache = request.cache;
+  setCurrentCache(request.cache);
+  prepareToUseHooksForRequest(request);
 
   try {
     const pingedSegments = request.pingedSegments;
@@ -692,25 +842,23 @@ function performWork(request: Request): void {
       const segment = pingedSegments[i];
       retrySegment(request, segment);
     }
-    if (request.flowing) {
-      flushCompletedChunks(request);
+    if (request.destination !== null) {
+      flushCompletedChunks(request, request.destination);
     }
   } catch (error) {
-    reportError(request, error);
+    logRecoverableError(request, error);
     fatalError(request, error);
   } finally {
     ReactCurrentDispatcher.current = prevDispatcher;
-    currentCache = prevCache;
+    setCurrentCache(prevCache);
+    resetHooksForRequest();
   }
 }
 
-let reentrant = false;
-function flushCompletedChunks(request: Request): void {
-  if (reentrant) {
-    return;
-  }
-  reentrant = true;
-  const destination = request.destination;
+function flushCompletedChunks(
+  request: Request,
+  destination: Destination,
+): void {
   beginWriting(destination);
   try {
     // We emit module chunks first in the stream so that
@@ -720,8 +868,9 @@ function flushCompletedChunks(request: Request): void {
     for (; i < moduleChunks.length; i++) {
       request.pendingChunks--;
       const chunk = moduleChunks[i];
-      if (!writeChunk(destination, chunk)) {
-        request.flowing = false;
+      const keepWriting: boolean = writeChunkAndReturn(destination, chunk);
+      if (!keepWriting) {
+        request.destination = null;
         i++;
         break;
       }
@@ -733,8 +882,9 @@ function flushCompletedChunks(request: Request): void {
     for (; i < jsonChunks.length; i++) {
       request.pendingChunks--;
       const chunk = jsonChunks[i];
-      if (!writeChunk(destination, chunk)) {
-        request.flowing = false;
+      const keepWriting: boolean = writeChunkAndReturn(destination, chunk);
+      if (!keepWriting) {
+        request.destination = null;
         i++;
         break;
       }
@@ -748,15 +898,15 @@ function flushCompletedChunks(request: Request): void {
     for (; i < errorChunks.length; i++) {
       request.pendingChunks--;
       const chunk = errorChunks[i];
-      if (!writeChunk(destination, chunk)) {
-        request.flowing = false;
+      const keepWriting: boolean = writeChunkAndReturn(destination, chunk);
+      if (!keepWriting) {
+        request.destination = null;
         i++;
         break;
       }
     }
     errorChunks.splice(0, i);
   } finally {
-    reentrant = false;
     completeWriting(destination);
   }
   flushBuffered(destination);
@@ -767,67 +917,45 @@ function flushCompletedChunks(request: Request): void {
 }
 
 export function startWork(request: Request): void {
-  request.flowing = true;
   scheduleWork(() => performWork(request));
 }
 
-export function startFlowing(request: Request): void {
-  request.flowing = true;
+export function startFlowing(request: Request, destination: Destination): void {
+  if (request.status === CLOSING) {
+    request.status = CLOSED;
+    closeWithError(destination, request.fatalError);
+    return;
+  }
+  if (request.status === CLOSED) {
+    return;
+  }
+  if (request.destination !== null) {
+    // We're already flowing.
+    return;
+  }
+  request.destination = destination;
   try {
-    flushCompletedChunks(request);
+    flushCompletedChunks(request, destination);
   } catch (error) {
-    reportError(request, error);
+    logRecoverableError(request, error);
     fatalError(request, error);
   }
 }
 
-function unsupportedHook(): void {
-  invariant(false, 'This Hook is not supported in Server Components.');
-}
-
-function unsupportedRefresh(): void {
-  invariant(
-    currentCache,
-    'Refreshing the cache is not supported in Server Components.',
-  );
-}
-
-let currentCache: Map<Function, mixed> | null = null;
-
-const Dispatcher: DispatcherType = {
-  useMemo<T>(nextCreate: () => T): T {
-    return nextCreate();
-  },
-  useCallback<T>(callback: T): T {
-    return callback;
-  },
-  useDebugValue(): void {},
-  useDeferredValue: (unsupportedHook: any),
-  useTransition: (unsupportedHook: any),
-  getCacheForType<T>(resourceType: () => T): T {
-    invariant(
-      currentCache,
-      'Reading the cache is only supported while rendering.',
-    );
-    let entry: T | void = (currentCache.get(resourceType): any);
-    if (entry === undefined) {
-      entry = resourceType();
-      // TODO: Warn if undefined?
-      currentCache.set(resourceType, entry);
+function importServerContexts(
+  contexts?: Array<[string, ServerContextJSONValue]>,
+) {
+  if (contexts) {
+    const prevContext = getActiveContext();
+    switchContext(rootContextSnapshot);
+    for (let i = 0; i < contexts.length; i++) {
+      const [name, value] = contexts[i];
+      const context = getOrCreateServerContext(name);
+      pushProvider(context, value);
     }
-    return entry;
-  },
-  readContext: (unsupportedHook: any),
-  useContext: (unsupportedHook: any),
-  useReducer: (unsupportedHook: any),
-  useRef: (unsupportedHook: any),
-  useState: (unsupportedHook: any),
-  useLayoutEffect: (unsupportedHook: any),
-  useImperativeHandle: (unsupportedHook: any),
-  useEffect: (unsupportedHook: any),
-  useOpaqueIdentifier: (unsupportedHook: any),
-  useMutableSource: (unsupportedHook: any),
-  useCacheRefresh(): <T>(?() => T, ?T) => void {
-    return unsupportedRefresh;
-  },
-};
+    const importedContext = getActiveContext();
+    switchContext(prevContext);
+    return importedContext;
+  }
+  return rootContextSnapshot;
+}

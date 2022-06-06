@@ -8,6 +8,7 @@
  */
 
 import type {ReactModel} from 'react-server/src/ReactFlightServer';
+import type {ServerContextJSONValue} from 'shared/ReactTypes';
 import type {BundlerConfig} from './ReactFlightServerWebpackBundlerConfig';
 
 import {
@@ -18,6 +19,8 @@ import {
 
 type Options = {
   onError?: (error: mixed) => void,
+  context?: Array<[string, ServerContextJSONValue]>,
+  identifierPrefix?: string,
 };
 
 function renderToReadableStream(
@@ -25,22 +28,28 @@ function renderToReadableStream(
   webpackMap: BundlerConfig,
   options?: Options,
 ): ReadableStream {
-  let request;
-  return new ReadableStream({
-    start(controller) {
-      request = createRequest(
-        model,
-        controller,
-        webpackMap,
-        options ? options.onError : undefined,
-      );
-      startWork(request);
+  const request = createRequest(
+    model,
+    webpackMap,
+    options ? options.onError : undefined,
+    options ? options.context : undefined,
+    options ? options.identifierPrefix : undefined,
+  );
+  const stream = new ReadableStream(
+    {
+      type: 'bytes',
+      start(controller) {
+        startWork(request);
+      },
+      pull(controller) {
+        startFlowing(request, controller);
+      },
+      cancel(reason) {},
     },
-    pull(controller) {
-      startFlowing(request);
-    },
-    cancel(reason) {},
-  });
+    // $FlowFixMe size() methods are not allowed on byte streams.
+    {highWaterMark: 0},
+  );
+  return stream;
 }
 
 export {renderToReadableStream};

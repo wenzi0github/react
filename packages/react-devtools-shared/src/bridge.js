@@ -54,9 +54,18 @@ export const BRIDGE_PROTOCOL: Array<BridgeProtocol> = [
     minNpmVersion: '"<4.11.0"',
     maxNpmVersion: '"<4.11.0"',
   },
+  // Versions 4.11.x – 4.12.x contained the backwards breaking change,
+  // but we didn't add the "fix" of checking the protocol version until 4.13,
+  // so we don't recommend downgrading to 4.11 or 4.12.
   {
     version: 1,
     minNpmVersion: '4.13.0',
+    maxNpmVersion: '4.21.0',
+  },
+  // Version 2 adds a StrictMode-enabled and supports-StrictMode bits to add-root operation.
+  {
+    version: 2,
+    minNpmVersion: '4.22.0',
     maxNpmVersion: null,
   },
 ];
@@ -138,6 +147,7 @@ type ViewAttributeSourceParams = {|
 
 type InspectElementParams = {|
   ...ElementAndRendererID,
+  forceFullData: boolean,
   path: Array<number | string> | null,
   requestID: number,
 |};
@@ -169,10 +179,20 @@ type UpdateConsolePatchSettingsParams = {|
   browserTheme: BrowserTheme,
 |};
 
+type SavedPreferencesParams = {|
+  appendComponentStack: boolean,
+  breakOnConsoleErrors: boolean,
+  componentFilters: Array<ComponentFilter>,
+  showInlineWarningsAndErrors: boolean,
+  hideConsoleLogsInStrictMode: boolean,
+|};
+
 export type BackendEvents = {|
+  backendVersion: [string],
   bridgeProtocol: [BridgeProtocol],
   extensionBackendInitialized: [],
   fastRefreshScheduled: [],
+  getSavedPreferences: [],
   inspectedElement: [InspectedElementPayload],
   isBackendStorageAPISupported: [boolean],
   isSynchronousXHRSupported: [boolean],
@@ -203,6 +223,7 @@ type FrontendEvents = {|
   clearWarningsForFiberID: [ElementAndRendererID],
   copyElementPath: [CopyElementPathParams],
   deletePath: [DeletePath],
+  getBackendVersion: [],
   getBridgeProtocol: [],
   getOwnersList: [ElementAndRendererID],
   getProfilingData: [{|rendererID: RendererID|}],
@@ -216,6 +237,7 @@ type FrontendEvents = {|
   profilingData: [ProfilingDataBackend],
   reloadAndProfile: [boolean],
   renamePath: [RenamePath],
+  savedPreferences: [SavedPreferencesParams],
   selectFiber: [number],
   setTraceUpdatesEnabled: [boolean],
   shutdown: [],
@@ -270,7 +292,9 @@ class Bridge<
 
     this._wallUnlisten =
       wall.listen((message: Message) => {
-        (this: any).emit(message.event, message.payload);
+        if (message && message.event) {
+          (this: any).emit(message.event, message.payload);
+        }
       }) || null;
 
     // Temporarily support older standalone front-ends sending commands to newer embedded backends.
