@@ -130,7 +130,9 @@ function warnIfStringRefCannotBeAutoConverted(config) {
  * the class pattern, so do not use new to call it. Also, instanceof check
  * will not work. Instead test $$typeof field against Symbol.for('react.element') to check
  * if something is a React Element.
- *
+ * 翻译：工厂模式来创建React元素，这里不再是class模式，不用再使用new进行初始化。
+ * 同样的，instanceof方法也不再其作用，取而代之的是判断 $$typeof 属性是否为 Symbol.for('react.element')，
+ * 来判断该元素是否为React元素。
  * @param {*} type
  * @param {*} props
  * @param {*} key

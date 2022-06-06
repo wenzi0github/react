@@ -58,9 +58,11 @@ const hasPerformanceNow =
   typeof performance === 'object' && typeof performance.now === 'function';
 
 if (hasPerformanceNow) {
+  // todo: 这里为什么要先存储到一个变量里，然后再使用呢？
   const localPerformance = performance;
   getCurrentTime = () => localPerformance.now();
 } else {
+  // 这里同理
   const localDate = Date;
   const initialTime = localDate.now(); // 创建一个初始时间，用来模拟performance.now()的执行结果
   getCurrentTime = () => localDate.now() - initialTime;
@@ -126,22 +128,28 @@ const isInputPending =
 const continuousOptions = {includeContinuous: enableIsInputPendingContinuous};
 
 /**
- * 检查延迟执行队列里，是否有需要执行的任务，
+ * 检查延迟执行队列里，是否有可以马上执行的任务，
  * 有的话，则将其从延迟队列里推出，修改sortIndex为过期时间（在延期执行队列里，sortIndex为startTime）
  * 然后将其压入到及时任务的队列中
- * @param {number} currentTime 
+ * @param {number} currentTime
  */
 function advanceTimers(currentTime) {
   // Check for tasks that are no longer delayed and add them to the queue.
+  // 检查不再延迟的任务并将它们添加到队列中
+  // timerQueue是用来存放延迟执行的任务的队列
   let timer = peek(timerQueue);
   while (timer !== null) {
     if (timer.callback === null) {
       // Timer was cancelled.
+      // 任务被取消，直接弹出
       pop(timerQueue);
     } else if (timer.startTime <= currentTime) {
       // Timer fired. Transfer to the task queue.
+      // 该任务已经可以执行了
       pop(timerQueue);
       timer.sortIndex = timer.expirationTime;
+
+      // 添加立即执行任务的队列中
       push(taskQueue, timer);
       if (enableProfiling) {
         markTaskStart(timer, currentTime);
@@ -149,6 +157,7 @@ function advanceTimers(currentTime) {
       }
     } else {
       // Remaining timers are pending.
+      // 其他情况，该任务则继续等待
       return;
     }
     timer = peek(timerQueue);
@@ -175,7 +184,7 @@ function handleTimeout(currentTime) {
       // 可执行队列为空，则判断延迟队列中的数据
       const firstTimer = peek(timerQueue);
       if (firstTimer !== null) {
-        // 若延迟队列不为空
+        // 若延迟队列不为空，则延迟一定重新调用当前方法handleTimeout
         requestHostTimeout(handleTimeout, firstTimer.startTime - currentTime);
       }
     }
@@ -183,9 +192,9 @@ function handleTimeout(currentTime) {
 }
 
 /**
- * 
- * @param {*} hasTimeRemaining 
- * @param {*} initialTime 
+ *
+ * @param {boolean} hasTimeRemaining 是否还有剩余时间？
+ * @param {number} initialTime 当前时间
  */
 function flushWork(hasTimeRemaining, initialTime) {
   if (enableProfiling) {
@@ -229,6 +238,13 @@ function flushWork(hasTimeRemaining, initialTime) {
   }
 }
 
+/**
+ * 循环获取当前任务
+ * https://docs.qq.com/flowchart/DS2F0dGFIVU1ieWda?u=7314a95fb28d4269b44c0026faa673b7
+ * @param {boolean} hasTimeRemaining 是否还有剩余时间，在flushWork中调用时，强制为true
+ * @param {number} initialTime 当前时间
+ * @returns {boolean}
+ */
 function workLoop(hasTimeRemaining, initialTime) {
   let currentTime = initialTime;
 
@@ -371,7 +387,7 @@ function unstable_wrapCallback(callback) {
  * 根据优先级计算任务的过期时间，并将其存入对应的队列中
  * @param {ImmediatePriority|UserBlockingPriority|NormalPriority|LowPriority|IdlePriority} priorityLevel 优先级
  * @param {Function} callback 就是我们要执行的任务内容
- * @param {{delay:number}} options
+ * @param {{delay:number}} options 设置该任务延迟执行的时间，这个延迟时间与不同优先级对应的过期时间不一样，这是手动设置的延迟时间
  * @returns
  */
 function unstable_scheduleCallback(priorityLevel, callback, options) {
@@ -415,7 +431,7 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
       break;
   }
 
-  var expirationTime = startTime + timeout; // 通过开始时间和超时时间，计算出过期时间点
+  var expirationTime = startTime + timeout; // 通过开始时间和优先级对应的延迟时间，计算出该任务的过期时间
 
   // 这里会按照id和sortIndex两个属性对任务进行优先级的排序
   // sortIndex值越小，优先级越高；
@@ -426,7 +442,7 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
     priorityLevel, // 任务的优先级。优先级按 ImmediatePriority、UserBlockingPriority、NormalPriority、LowPriority、IdlePriority 顺序依次越低
     startTime, // 时间戳，任务预期执行时间，默认为当前时间，即同步任务。可通过 options.delay 设为异步延时任务
     expirationTime, // 过期时间，scheduler 基于该值进行异步任务的调度。通过 options.timeout 设定或 priorityLevel 计算 timeout 值后，timeout 与 startTime 相加称为 expirationTime
-    sortIndex: -1, // 默认值为 -1。对于异步延时任务，该值将赋为 startTime
+    sortIndex: -1, // 默认值为 -1。对于延时执行的任务，该值将赋为 startTime
   };
   if (enableProfiling) {
     newTask.isQueued = false;
@@ -623,24 +639,28 @@ const performWorkUntilDeadline = () => {
   // 判断`立即执行任务`是否为空
   if (scheduledHostCallback !== null) {
     const currentTime = getCurrentTime();
+    // 记录开始时间，这样我们就可以计算主线程被阻塞了多长时间
     // Keep track of the start time so we can measure how long the main thread
     // has been blocked.
     startTime = currentTime;
     const hasTimeRemaining = true;
 
+    // 如果调度程序任务抛出异常，退出当前浏览器任务以便可以观察到错误
     // If a scheduler task throws, exit the current browser task so the
     // error can be observed.
-    //
+    // 故意不使用 try-catch，因为这会使一些调试技术变得更加困难。 相反，如果 `scheduledHostCallback` 出错，则 `hasMoreWork` 将保持为真，我们将继续工作循环。
     // Intentionally not using a try-catch, since that makes some debugging
     // techniques harder. Instead, if `scheduledHostCallback` errors, then
     // `hasMoreWork` will remain true, and we'll continue the work loop.
-    let hasMoreWork = true;
+    let hasMoreWork = true; // 是否还有更多的任务需要执行
     try {
+      // 此时 scheduledHostCallback 为 flushWork
       hasMoreWork = scheduledHostCallback(hasTimeRemaining, currentTime);
     } finally {
       if (hasMoreWork) {
         // If there's more work, schedule the next message event at the end
         // of the preceding one.
+        // 若还有后续的任务，则继续循环，调度下一个任务
         schedulePerformWorkUntilDeadline();
       } else {
         isMessageLoopRunning = false;
@@ -657,6 +677,7 @@ const performWorkUntilDeadline = () => {
 
 /**
  * 启动下一个周期的方法
+ * 优先使用这几个方法的原因： https://github.com/wenzi0github/react/issues/5
  * 1. 优先使用setImmediate
  * 2. 使用MessgeChannel
  * 3. setTimeout兜底
@@ -716,6 +737,7 @@ function requestHostTimeout(callback, ms) {
   }, ms);
 }
 
+// 取消延迟队列
 function cancelHostTimeout() {
   localClearTimeout(taskTimeoutID);
   taskTimeoutID = -1;

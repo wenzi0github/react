@@ -15,8 +15,8 @@ type Node = {|
 
 /**
  * 往队列中插入数据，然后升序排序，即优先级高的排在前面
- * @param {Heap} heap 
- * @param {Node} node 
+ * @param {Heap} heap
+ * @param {Node} node
  */
 export function push(heap: Heap, node: Node): void {
   const index = heap.length;
@@ -35,8 +35,8 @@ export function peek(heap: Heap): Node | null {
 
 /**
  * 取出队列最前面的元素
- * @param {*} heap 
- * @returns 
+ * @param {*} heap
+ * @returns
  */
 export function pop(heap: Heap): Node | null {
   if (heap.length === 0) {
@@ -112,9 +112,12 @@ function siftDown(heap, node, i) {
 
 /**
  * 对两个节点进行比较，优先比较sortIndex，然后再比较taskid
+ * sortIndex 在同步执行队列 taskQueue 中，表示任务优先级对应的过期时间，过期时间越小，说明优先级越高，越需要优先执行；
+ * sortIndex 在延迟执行队列timerQueue中，表示任务可以执行的开始时间，开始时间越小，表示优先级越高
+ * 若过期时间或开始时间相同，则创建早的任务先执行
  * @param {Heap} a
  * @param {Heap} b
- * @returns
+ * @returns {number}
  */
 function compare(a, b) {
   // Compare sort index first, then task id.
