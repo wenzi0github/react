@@ -59,6 +59,11 @@ export function precacheFiberNode(
   (node: any)[internalInstanceKey] = hostInst;
 }
 
+/**
+ * 将node标记为root，并指向到对应的Fiber节点
+ * @param hostRoot
+ * @param node
+ */
 export function markContainerAsRoot(hostRoot: Fiber, node: Container): void {
   node[internalContainerInstanceKey] = hostRoot;
 }
@@ -67,6 +72,11 @@ export function unmarkContainerAsRoot(node: Container): void {
   node[internalContainerInstanceKey] = null;
 }
 
+/**
+ * 判断当前节点是否已被作为root节点
+ * @param node
+ * @returns {boolean}
+ */
 export function isContainerMarkedAsRoot(node: Container): boolean {
   return !!node[internalContainerInstanceKey];
 }

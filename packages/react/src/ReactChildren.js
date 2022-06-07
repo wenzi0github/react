@@ -55,6 +55,7 @@ function escapeUserProvidedKey(text: string): string {
 
 /**
  * Generate a key string that identifies a element within a set.
+ * 获取element中的key键值，若element中存在key属性，则直接返回；否则使用index的36进制字符串
  *
  * @param {*} element A element that could contain a manual key.
  * @param {number} index Index that is used if a manual key is not provided.
@@ -74,6 +75,15 @@ function getElementKey(element: any, index: number): string {
   return index.toString(36);
 }
 
+/**
+ * 将元素转为array类型
+ * @param {?ReactNodeList} children
+ * @param {Array<React$Node>} array 存储children里最终的叶子节点（中间层的节点会进行递归处理，直到最终的叶子节点）
+ * @param {string} escapedPrefix
+ * @param {string} nameSoFar
+ * @param {(?React$Node) => ?ReactNodeList} callback
+ * @returns {number} children的个数
+ */
 function mapIntoArray(
   children: ?ReactNodeList,
   array: Array<React$Node>,
@@ -88,8 +98,13 @@ function mapIntoArray(
     children = null;
   }
 
-  let invokeCallback = false;
+  let invokeCallback = false; // 是否需要执行传进来的callback
 
+  /**
+   * 当传入的children类型为null, string, number, 或$$typeof为 Symbol.for('react.element')、Symbol.for('react.portal')，
+   * 则可以执行传入的callback
+   * 剩余的其他类型则不执行
+   */
   if (children === null) {
     invokeCallback = true;
   } else {
@@ -109,6 +124,8 @@ function mapIntoArray(
 
   if (invokeCallback) {
     const child = children;
+
+    // 根据传过来的callback处理child
     let mappedChild = callback(child);
     // If it's the only child, treat the name as if it was wrapped in an array
     // so that it's consistent if the number of children grows:
@@ -119,9 +136,12 @@ function mapIntoArray(
       if (childKey != null) {
         escapedChildKey = escapeUserProvidedKey(childKey) + '/';
       }
+      // 递归调用mapIntoArray，操作mappedChild
       mapIntoArray(mappedChild, array, escapedChildKey, '', c => c);
     } else if (mappedChild != null) {
+      // 若mappedChild为null，不处理
       if (isValidElement(mappedChild)) {
+        // 若mappedChild是有效的element元素
         if (__DEV__) {
           // The `if` statement here prevents auto-disabling of the safe
           // coercion ESLint rule, so we must manually disable it below.
@@ -130,6 +150,7 @@ function mapIntoArray(
             checkKeyStringCoercion(mappedChild.key);
           }
         }
+        // 克隆出一个新的child，并使用一个新的key作为表示
         mappedChild = cloneAndReplaceKey(
           mappedChild,
           // Keep both the (mapped) and old keys if they differ, just as
@@ -148,6 +169,8 @@ function mapIntoArray(
     }
     return 1;
   }
+
+  // 当children不是上面的那些类型时
 
   let child;
   let nextName;
@@ -168,6 +191,7 @@ function mapIntoArray(
       );
     }
   } else {
+    // 获取children里携带的迭代器
     const iteratorFn = getIteratorFn(children);
     if (typeof iteratorFn === 'function') {
       const iterableChildren: Iterable<React$Node> & {
@@ -202,6 +226,7 @@ function mapIntoArray(
         );
       }
     } else if (type === 'object') {
+      // children不是合法的React child
       // eslint-disable-next-line react-internal/safe-string-coercion
       const childrenString = String((children: any));
 
@@ -224,6 +249,7 @@ function mapIntoArray(
 
 type MapFunc = (child: ?React$Node) => ?ReactNodeList;
 
+// 循环执行children，若传入了func，则会对每一个叶子节点进行调用
 /**
  * Maps children that are typically specified as `props.children`.
  *

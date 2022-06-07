@@ -85,6 +85,11 @@ const defaultOnRecoverableError =
         console['error'](error);
       };
 
+/**
+ * 创建
+ * @param internalRoot
+ * @constructor
+ */
 function ReactDOMRoot(internalRoot: FiberRoot) {
   this._internalRoot = internalRoot;
 }
@@ -171,6 +176,7 @@ export function createRoot(
     throw new Error('createRoot(...): Target container is not a DOM element.');
   }
 
+  // 若container为body或已被作为root使用过，则在dev环境发出警告
   warnIfReactDOMContainerInDEV(container);
 
   let isStrictMode = false;
@@ -221,6 +227,7 @@ export function createRoot(
     }
   }
 
+  // 创建一个fiber类型的节点
   const root = createContainer(
     container,
     ConcurrentRoot,
@@ -231,12 +238,17 @@ export function createRoot(
     onRecoverableError,
     transitionCallbacks,
   );
+  // 将container标记为已被作为root使用过
+  // 并通过一个属性指向到fiber节点， container['__reactContainer$'] = root.current; // root为fiber类型的节点
   markContainerAsRoot(root.current, container);
 
+  // 获取container的真实element元素，若container是注释类型的元素，则使用其父级元素，否则直接使用container
   const rootContainerElement: Document | Element | DocumentFragment =
     container.nodeType === COMMENT_NODE
       ? (container.parentNode: any)
       : container;
+
+  // 绑定所有可支持的事件
   listenToAllSupportedEvents(rootContainerElement);
 
   return new ReactDOMRoot(root);
@@ -359,6 +371,7 @@ function warnIfReactDOMContainerInDEV(container: any) {
       ((container: any): Element).tagName &&
       ((container: any): Element).tagName.toUpperCase() === 'BODY'
     ) {
+      // 若container为body时，发出警告
       console.error(
         'createRoot(): Creating roots directly with document.body is ' +
           'discouraged, since its children are often manipulated by third-party ' +
@@ -368,6 +381,7 @@ function warnIfReactDOMContainerInDEV(container: any) {
       );
     }
     if (isContainerMarkedAsRoot(container)) {
+      // 若container已经被作为root节点使用过
       if (container._reactRootContainer) {
         console.error(
           'You are calling ReactDOMClient.createRoot() on a container that was previously ' +
