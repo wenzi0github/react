@@ -148,6 +148,7 @@ function warnIfStringRefCannotBeAutoConverted(config) {
  * @internal
  */
 const ReactElement = function(type, key, ref, self, source, owner, props) {
+  // 将从createElement处理过的数据封装成一个element
   const element = {
     // This tag allows us to uniquely identify this as a React Element
     // 这个标签允许我们将它唯一地标识为一个 React 元素
@@ -365,6 +366,11 @@ export function jsxDEV(type, config, maybeKey, source, self) {
 /**
  * Create and return a new ReactElement of the given type.
  * See https://reactjs.org/docs/react-api.html#createelement
+ * 对传入的数据进行加工，处理完成后调用ReactElement创建真正的虚拟dom
+ * 处理过程：
+ * 1. 处理config中的数据，单独提取key, ref, __self, __source属性，并复制其他属性；
+ * 2. 处理子元素，默认从第3个参数开始的都是子元素，若子元素只有1个，直接赋值；若有多个则转成数组再赋值；
+ * 3. 处理默认属性defaultProps，只有config中没有该属性或该属性的值为空时，才使用默认属性；
  * @param {string} type dom元素的类型，如div, span等
  * @param {?object} config 元素的属性，可以为空
  * @param {?any[]} children 子元素，可以为空
@@ -372,6 +378,7 @@ export function jsxDEV(type, config, maybeKey, source, self) {
 export function createElement(type, config, children) {
   let propName;
 
+  // 创建一个全新的props对象，用来存储config中的属性
   // Reserved names are extracted
   const props = {};
 
@@ -403,6 +410,12 @@ export function createElement(type, config, children) {
         hasOwnProperty.call(config, propName) &&
         !RESERVED_PROPS.hasOwnProperty(propName)
       ) {
+        // const RESERVED_PROPS = {
+        //   key: true,
+        //   ref: true,
+        //   __self: true,
+        //   __source: true,
+        // };
         props[propName] = config[propName];
       }
     }

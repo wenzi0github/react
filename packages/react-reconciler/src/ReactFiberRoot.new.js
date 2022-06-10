@@ -49,6 +49,23 @@ export type RootState = {
   transitions: Set<Transition> | null,
 };
 
+/**
+ * fiberRootNode是整个应用的根节点，rootFiber是<App />所在组件树的根节点
+ * https://react.iamkasong.com/process/doubleBuffer.html
+ *
+ * 之所以要区分fiberRootNode与rootFiber，是因为在应用中我们可以多次调用ReactDOM.render渲染不同的组件树，
+ * 他们会拥有不同的rootFiber。但是整个应用的根节点只有一个，那就是fiberRootNode
+ */
+
+/**
+ *
+ * @param containerInfo
+ * @param tag
+ * @param hydrate
+ * @param identifierPrefix
+ * @param onRecoverableError
+ * @constructor
+ */
 function FiberRootNode(
   containerInfo,
   tag,
