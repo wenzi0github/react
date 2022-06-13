@@ -520,11 +520,19 @@ function requestRetryLane(fiber: Fiber) {
   return claimNextRetryLane();
 }
 
+/**
+ * 更新fiber
+ * @param fiber
+ * @param lane
+ * @param eventTime
+ * @returns {null|FiberRoot}
+ */
 export function scheduleUpdateOnFiber(
   fiber: Fiber,
   lane: Lane,
   eventTime: number,
 ): FiberRoot | null {
+  // 检测更新的深度，若无限更新，则抛出异常
   checkForNestedUpdates();
 
   if (__DEV__) {
@@ -2832,6 +2840,10 @@ function jnd(timeElapsed: number) {
     : ceil(timeElapsed / 1960) * 1960;
 }
 
+/**
+ * 检测是否嵌套更新
+ * 若更新深度超过50层，则抛出异常
+ */
 function checkForNestedUpdates() {
   if (nestedUpdateCount > NESTED_UPDATE_LIMIT) {
     nestedUpdateCount = 0;

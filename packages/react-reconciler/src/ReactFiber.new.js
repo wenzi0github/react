@@ -130,9 +130,9 @@ function FiberNode(
   this.stateNode = null;
 
   // Fiber
-  this.return = null;
-  this.child = null;
-  this.sibling = null;
+  this.return = null; // parent node
+  this.child = null; // first child node
+  this.sibling = null; // sibling node
   this.index = 0;
 
   this.ref = null;
@@ -150,7 +150,7 @@ function FiberNode(
   this.subtreeFlags = NoFlags;
   this.deletions = null;
 
-  this.lanes = NoLanes;
+  this.lanes = NoLanes; // 优先级
   this.childLanes = NoLanes;
 
   this.alternate = null;

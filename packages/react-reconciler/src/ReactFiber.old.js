@@ -152,6 +152,7 @@ function FiberNode(
   this.lanes = NoLanes;
   this.childLanes = NoLanes;
 
+  // 双缓冲：防止数据丢失，提高效率（之后Dom-diff的时候可以直接比较或者使用
   this.alternate = null;
 
   if (enableProfilerTimer) {

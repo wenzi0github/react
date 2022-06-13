@@ -49,6 +49,14 @@ export type RootState = {
   transitions: Set<Transition> | null,
 };
 
+/**
+ * @param {HTMLElement} containerInfo
+ * @param {RootTag} tag
+ * @param {boolean} hydrate
+ * @param identifierPrefix
+ * @param onRecoverableError
+ * @constructor
+ */
 function FiberRootNode(
   containerInfo,
   tag,
@@ -57,8 +65,13 @@ function FiberRootNode(
   onRecoverableError,
 ) {
   this.tag = tag;
-  this.containerInfo = containerInfo;
+  this.containerInfo = containerInfo; // 该fiber对应的真实dom节点
   this.pendingChildren = null;
+
+  /**
+   * 当前应用root节点对应的Fiber对象
+   * @type {null}
+   */
   this.current = null;
   this.pingCache = null;
   this.finishedWork = null;
@@ -131,12 +144,12 @@ function FiberRootNode(
 
 /**
  * 创建FiberRoot
- * @param {*} containerInfo 
- * @param {*} tag 
- * @param {*} hydrate 
- * @param {*} hydrationCallbacks 
- * @param {*} isStrictMode 
- * @param {*} concurrentUpdatesByDefaultOverride 
+ * @param {*} containerInfo
+ * @param {*} tag
+ * @param {*} hydrate
+ * @param {*} hydrationCallbacks
+ * @param {*} isStrictMode
+ * @param {*} concurrentUpdatesByDefaultOverride
  */
 export function createFiberRoot(
   containerInfo: any,
@@ -171,6 +184,7 @@ export function createFiberRoot(
 
   // Cyclic construction. This cheats the type system right now because
   // stateNode is any.
+  // createHostRootFiber -> createFiber -> new FiberNode(tag, pendingProps, key, mode)
   const uninitializedFiber = createHostRootFiber(
     tag,
     isStrictMode,
@@ -178,6 +192,8 @@ export function createFiberRoot(
   );
 
   // 循环引用！
+  // root是FiberRootNode的实例
+  // uninitializedFiber是FiberNode的实例
   root.current = uninitializedFiber;
   uninitializedFiber.stateNode = root;
 
