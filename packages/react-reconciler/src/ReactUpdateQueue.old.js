@@ -212,6 +212,7 @@ export function createUpdate(eventTime: number, lane: Lane): Update<*> {
 
 /**
  * 将update添加到fiber的updateQueue中
+ * https://github.com/wenzi0github/react/issues/7
  * https://zhuanlan.zhihu.com/p/386897467
  * @param fiber
  * @param update
@@ -274,7 +275,6 @@ export function enqueueUpdate<State>(
        * 示意图：https://pic2.zhimg.com/80/v2-bbb9813e8e4922b05d77261fe7814e95_1440w.jpg
        */
       update.next = pending.next;
-      //
       pending.next = update;
     }
     sharedQueue.pending = update;
