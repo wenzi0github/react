@@ -210,6 +210,13 @@ export function createUpdate(eventTime: number, lane: Lane): Update<*> {
   return update;
 }
 
+/**
+ * 将update添加到fiber的updateQueue中
+ * https://zhuanlan.zhihu.com/p/386897467
+ * @param fiber
+ * @param update
+ * @param lane
+ */
 export function enqueueUpdate<State>(
   fiber: Fiber,
   update: Update<State>,
@@ -217,6 +224,7 @@ export function enqueueUpdate<State>(
 ) {
   const updateQueue = fiber.updateQueue;
   if (updateQueue === null) {
+    // 只有在fiber卸载时还会出现
     // Only occurs if the fiber has been unmounted.
     return;
   }
@@ -238,11 +246,35 @@ export function enqueueUpdate<State>(
     sharedQueue.interleaved = update;
   } else {
     const pending = sharedQueue.pending;
+    /**
+     * 为什么要做成环形链表？
+     * 做成环形链表可以只需要利用一个指针，便能找到第一个进入的节点和最后一个进入的节点，
+     * 更加方便的找到最后一个 Update 对象，同时插入新的 Update 对象也非常方便。
+     * 如果使用普通的线性链表，想跟环形一样插入和查找都方便的话，就需要同时记录第一个和最后一个节点的位置，维护成本相较于环形肯定是更高了
+     */
     if (pending === null) {
       // This is the first update. Create a circular list.
+      // 当update为第1个节点时，自己指向自己，pending也指向到update，同理pending.next也指向到pending，即update
       update.next = update;
     } else {
+      /**
+       * 当只有一个节点时，pending与update指向的是同一个节点，update.next = update; pending.next = update;
+       * 当已经有1个节点(val=1)，再插入一个新节点update(val=2)时，pending和pending.next此时指向是的之前的节点，
+       * update.next = pending.next则表示新节点的next指向到了之前的节点(val=1),
+       * pending.next = update，表示pending的下一个节点知道了刚才的update，即之前的update.next指向到了新的update
+       * pending = update, pending指向到了最新的节点
+       * 当已经有2个节点，再插入一个新节点update(val=3)时，pending目前指向的节点是(val=2)，pending.next指向的节点是val=1
+       * update.next = pending.next，表示新节点(val=3)的next指向到了最早的节点(val=1)，
+       * pending.next = update, 节点(val=2)的next指向到了新节点(val=3),
+       * pending = update, pending又指向到了最新的节点(val=3)
+       * 此时，3(pending)->1->2->3
+       * 若再插入一个节点(val=4)，最后的结构是4(pending)->1->2->3->4，
+       * 即sharedQueue.pending指向的链表是一个循环的链表结构，而pending永远指向到最新的那个update节点，
+       * 而最新的update节点又重新指向到了最早的那个节点
+       * 示意图：https://pic2.zhimg.com/80/v2-bbb9813e8e4922b05d77261fe7814e95_1440w.jpg
+       */
       update.next = pending.next;
+      //
       pending.next = update;
     }
     sharedQueue.pending = update;

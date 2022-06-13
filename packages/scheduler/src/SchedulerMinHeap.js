@@ -8,6 +8,7 @@
  */
 
 /**
+ * https://github.com/wenzi0github/react/issues/6
  * heap是一个二叉堆的结构，即这是一个二叉树的结构，每个节点的元素都小于等于（或大于等于）两个子节点的值
  * 在数组中的存储方式：横向挨个儿存储
  * https://mp.weixin.qq.com/s?__biz=Mzg3NTcwMTUzNA==&mid=2247486312&idx=1&sn=e7d01cbd72dec43a7b39aeddae1b0e13&source=41#wechat_redirect

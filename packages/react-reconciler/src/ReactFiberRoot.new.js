@@ -50,7 +50,7 @@ export type RootState = {
 };
 
 /**
- * fiberRootNode是整个应用的根节点，rootFiber是<App />所在组件树的根节点
+ * fiberRootNode是整个应用的根节点（类似于链表的空头指针，仅用于指向到哪个组件树上），rootFiber是<App />所在组件树的根节点
  * https://react.iamkasong.com/process/doubleBuffer.html
  *
  * 之所以要区分fiberRootNode与rootFiber，是因为在应用中我们可以多次调用ReactDOM.render渲染不同的组件树，
@@ -74,9 +74,9 @@ function FiberRootNode(
   onRecoverableError,
 ) {
   this.tag = tag;
-  this.containerInfo = containerInfo;
+  this.containerInfo = containerInfo; // 真实的dom节点
   this.pendingChildren = null;
-  this.current = null;
+  this.current = null; // 当前的组件树
   this.pingCache = null;
   this.finishedWork = null;
   this.timeoutHandle = noTimeout;

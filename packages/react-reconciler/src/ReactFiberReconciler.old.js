@@ -141,6 +141,7 @@ function getContextForSubtree(
   parentComponent: ?React$Component<any, any>,
 ): Object {
   if (!parentComponent) {
+    // emptyContextObject 是 {}
     return emptyContextObject;
   }
 
@@ -317,6 +318,14 @@ export function createHydrationContainer(
   return root;
 }
 
+/**
+ *
+ * @param {ReactNodeList} element fiber树
+ * @param {OpaqueRoot} container
+ * @param {?React$Component<any, any>} parentComponent 在React18传到这里的是null
+ * @param {?Function} callback render()里的callback，不过从React18开始就没了，传入的是null
+ * @returns {Lane}
+ */
 export function updateContainer(
   element: ReactNodeList,
   container: OpaqueRoot,
@@ -326,6 +335,12 @@ export function updateContainer(
   if (__DEV__) {
     onScheduleRoot(container, element);
   }
+
+  // packages/react-reconciler/src/ReactFiberRoot.old.js / createFiberRoot()
+  /**
+   * current:
+   * const uninitializedFiber = createHostRootFiber(tag, isStrictMode, concurrentUpdatesByDefaultOverride,);
+   */
   const current = container.current;
   const eventTime = requestEventTime();
   const lane = requestUpdateLane(current);
@@ -358,11 +373,14 @@ export function updateContainer(
     }
   }
 
+  // 结合 lane（优先级）信息，创建 update 对象，一个 update 对象意味着一个更新
   const update = createUpdate(eventTime, lane);
   // Caution: React DevTools currently depends on this property
   // being called "element".
   update.payload = {element};
 
+  // 处理 callback，这个 callback 其实就是我们调用 ReactDOM.render 时传入的 callback
+  // 不过从React18开始，render不再传入callback了
   callback = callback === undefined ? null : callback;
   if (callback !== null) {
     if (__DEV__) {
@@ -377,6 +395,9 @@ export function updateContainer(
     update.callback = callback;
   }
 
+  /**
+   * 将update添加到current的pending中
+   */
   enqueueUpdate(current, update, lane);
   const root = scheduleUpdateOnFiber(current, lane, eventTime);
   if (root !== null) {

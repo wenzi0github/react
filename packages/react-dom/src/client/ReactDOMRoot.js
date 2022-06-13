@@ -104,16 +104,22 @@ ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = functio
 
   if (__DEV__) {
     if (typeof arguments[1] === 'function') {
+      // 第2个参数是function时，给出提示，render方法不再支持callback，而应当放在useEffect()中
+      // 主要是为了给使用之前版本的用户进行提示
       console.error(
         'render(...): does not support the second callback argument. ' +
           'To execute a side effect after rendering, declare it in a component body with useEffect().',
       );
     } else if (isValidContainer(arguments[1])) {
+      // 若第2个参数是一个挂载dom节点，给出提示，若是通过createRoot创建然后调用render的，第2个参数不用再传入dom节点
+      // 主要是为了给使用之前版本的用户进行提示
+      // 之前是ReactDOM.render(<App />, document.getElementById('root'));的用法，但现在不这么使用了
       console.error(
         'You passed a container to the second argument of root.render(...). ' +
           "You don't need to pass it again since you already passed it to create the root.",
       );
     } else if (typeof arguments[1] !== 'undefined') {
+      // root.render()只支持传入一个参数
       console.error(
         'You passed a second argument to root.render(...) but it only accepts ' +
           'one argument.',
@@ -243,14 +249,18 @@ export function createRoot(
   markContainerAsRoot(root.current, container);
 
   // 获取container的真实element元素，若container是注释类型的元素，则使用其父级元素，否则直接使用container
+  // 大概是因为注释节点无法挂载事件
   const rootContainerElement: Document | Element | DocumentFragment =
     container.nodeType === COMMENT_NODE
       ? (container.parentNode: any)
       : container;
 
-  // 绑定所有可支持的事件
+  // 绑定所有可支持的事件到 rootContainerElement 节点上
   listenToAllSupportedEvents(rootContainerElement);
 
+  // 使用ReactDOMRoot实例化一个对象
+  // 属性_internalRoot 指向到到 root
+  // 并有两个方法 render() 和 unmount()
   return new ReactDOMRoot(root);
 }
 
@@ -339,18 +349,24 @@ export function hydrateRoot(
   return new ReactDOMHydrationRoot(root);
 }
 
+/**
+ * 判断node是否是一个有效的dom挂载节点
+ * @param {any} node dom节点
+ * @returns {boolean}
+ */
 export function isValidContainer(node: any): boolean {
   return !!(
     node &&
-    (node.nodeType === ELEMENT_NODE ||
-      node.nodeType === DOCUMENT_NODE ||
-      node.nodeType === DOCUMENT_FRAGMENT_NODE ||
-      (!disableCommentsAsDOMContainers &&
+    (node.nodeType === ELEMENT_NODE || // 普通节点，如<div>等
+      node.nodeType === DOCUMENT_NODE || // document节点
+      node.nodeType === DOCUMENT_FRAGMENT_NODE || // 文档片段节点
+      (!disableCommentsAsDOMContainers && // 若没有禁用注释节点，则可以使用注释节点
         node.nodeType === COMMENT_NODE &&
         (node: any).nodeValue === ' react-mount-point-unstable '))
   );
 }
 
+// 判断node是否是一个有效的挂载节点（已过时）
 // TODO: Remove this function which also includes comment nodes.
 // We only use it in places that are currently more relaxed.
 export function isValidContainerLegacy(node: any): boolean {

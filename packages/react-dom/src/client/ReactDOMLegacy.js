@@ -310,6 +310,7 @@ export function hydrate(
   );
 }
 
+// 从React18开始，不再支持 ReactDOM.render() 方法，而是应当使用 createRoot
 export function render(
   element: React$Element<any>,
   container: Container,
