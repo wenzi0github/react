@@ -328,7 +328,7 @@ export function updateContainer(
   }
   const current = container.current;
   const eventTime = requestEventTime();
-  const lane = requestUpdateLane(current);
+  const lane = requestUpdateLane(current); // 不懂，是为了获取到优先级吗？
 
   if (enableSchedulingProfiler) {
     markRenderScheduled(lane);
@@ -358,6 +358,19 @@ export function updateContainer(
     }
   }
 
+  /**
+   * const update: Update<*> = {
+      eventTime,
+      lane,
+
+      tag: UpdateState,
+      payload: null,
+      callback: null,
+
+      next: null,
+    };
+   * @type {Update<*>}
+   */
   const update = createUpdate(eventTime, lane);
   // Caution: React DevTools currently depends on this property
   // being called "element".

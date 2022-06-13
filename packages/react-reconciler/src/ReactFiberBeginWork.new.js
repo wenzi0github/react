@@ -446,11 +446,11 @@ function updateForwardRef(
 
 /**
  * @param {*} current current默认传入一个null
- * @param {*} workInProgress 
- * @param {*} Component 
- * @param {*} nextProps 
- * @param {*} renderLanes 
- * @returns 
+ * @param {*} workInProgress
+ * @param {*} Component
+ * @param {*} nextProps
+ * @param {*} renderLanes
+ * @returns
  */
 function updateMemoComponent(
   current: Fiber | null,
@@ -953,12 +953,12 @@ function markRef(current: Fiber | null, workInProgress: Fiber) {
 
 /**
  * 更新 Function Component
- * @param {*} current 
- * @param {*} workInProgress 
- * @param {*} Component 
- * @param {*} nextProps 
- * @param {*} renderLanes 
- * @returns 
+ * @param {*} current
+ * @param {*} workInProgress
+ * @param {*} Component
+ * @param {*} nextProps
+ * @param {*} renderLanes
+ * @returns
  */
 function updateFunctionComponent(
   current,
@@ -3690,6 +3690,7 @@ function beginWork(
   }
 
   if (current !== null) {
+    // current不为null，是update阶段
     const oldProps = current.memoizedProps;
     const newProps = workInProgress.pendingProps;
 
@@ -3736,6 +3737,7 @@ function beginWork(
       }
     }
   } else {
+    // current为null，是初始mount阶段
     didReceiveUpdate = false;
 
     if (getIsHydrating() && isForkedChild(workInProgress)) {

@@ -74,7 +74,7 @@ function FiberRootNode(
   onRecoverableError,
 ) {
   this.tag = tag;
-  this.containerInfo = containerInfo;
+  this.containerInfo = containerInfo; // 真实的dom元素
   this.pendingChildren = null;
   this.current = null;
   this.pingCache = null;

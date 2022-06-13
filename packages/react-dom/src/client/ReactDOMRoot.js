@@ -94,10 +94,14 @@ function ReactDOMRoot(internalRoot: FiberRoot) {
   this._internalRoot = internalRoot;
 }
 
+/**
+ * render的入口
+ * @param {ReactNodeList} children 通过createElement或babel转换后的树形结构
+ */
 ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = function(
   children: ReactNodeList,
 ): void {
-  const root = this._internalRoot;
+  const root = this._internalRoot; // FiberRootNode
   if (root === null) {
     throw new Error('Cannot update an unmounted root.');
   }
@@ -120,6 +124,7 @@ ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = functio
       );
     }
 
+    // 真实的dom元素
     const container = root.containerInfo;
 
     if (container.nodeType !== COMMENT_NODE) {
@@ -172,6 +177,7 @@ export function createRoot(
   container: Element | Document | DocumentFragment,
   options?: CreateRootOptions,
 ): RootType {
+  // 判断container是否是合法的dom元素
   if (!isValidContainer(container)) {
     throw new Error('createRoot(...): Target container is not a DOM element.');
   }
@@ -230,7 +236,7 @@ export function createRoot(
   // 创建一个fiber类型的节点
   const root = createContainer(
     container,
-    ConcurrentRoot,
+    ConcurrentRoot, // 1
     null,
     isStrictMode,
     concurrentUpdatesByDefaultOverride,

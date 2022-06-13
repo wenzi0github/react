@@ -1895,8 +1895,8 @@ function workLoopConcurrent() {
  * 执行当前fiber的任务，并获取下一个fiber的指针
  * 若下一个fiber指针为空，则停止工作，执行 completeUnitOfWork();
  * 若不为空，则将 workInProgress 指针指向到下一个fiber，继续回到上面的 workLoopConcurrent() 进行调度
- * 直到 workInProgress 指针为空 
- * @param {*} unitOfWork 
+ * 直到 workInProgress 指针为空
+ * @param {*} unitOfWork
  */
 function performUnitOfWork(unitOfWork: Fiber): void {
   // The current, flushed, state of this fiber is the alternate. Ideally
@@ -1927,8 +1927,8 @@ function performUnitOfWork(unitOfWork: Fiber): void {
 }
 
 /**
- * @param {*} unitOfWork 
- * @returns 
+ * @param {*} unitOfWork
+ * @returns
  */
 function completeUnitOfWork(unitOfWork: Fiber): void {
   /**
