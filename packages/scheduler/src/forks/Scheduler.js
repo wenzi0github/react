@@ -545,7 +545,7 @@ let startTime = -1;
 
 let needsPaint = false;
 
-// 判断是否中断，将主程让给浏览器
+// 判断是否中断，将主程让给浏览器，返回true表示要让出
 function shouldYieldToHost() {
   const timeElapsed = getCurrentTime() - startTime;
   if (timeElapsed < frameInterval) {

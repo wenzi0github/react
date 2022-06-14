@@ -1799,11 +1799,15 @@ function renderRootSync(root: FiberRoot, lanes: Lanes) {
   return workInProgressRootExitStatus;
 }
 
+// workLoopSync 和 workLoopConcurrent 的区别：
+// workLoopSync会一直执行，直到workInProgress执行完毕
+// workLoopConcurrent会在没有空余时间时，中断执行
+
 // The work loop is an extremely hot path. Tell Closure not to inline it.
 /** @noinline */
 function workLoopSync() {
   // Already timed out, so perform work without checking if we need to yield.
-  // 已经超时了，所以即使需要让出时，也不再做检查，知道把workInProgress执行完
+  // 已经超时了，所以即使需要让出时，也不再做检查，直到把workInProgress执行完
   while (workInProgress !== null) {
     performUnitOfWork(workInProgress);
   }
@@ -1892,6 +1896,7 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes) {
 /** @noinline */
 function workLoopConcurrent() {
   // Perform work until Scheduler asks us to yield
+  // 执行任务，直到协调器告诉我们需要让出主程，然后中断循环
   while (workInProgress !== null && !shouldYield()) {
     performUnitOfWork(workInProgress);
   }

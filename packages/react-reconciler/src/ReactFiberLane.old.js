@@ -6,7 +6,15 @@
  *
  * @flow
  */
-
+/**
+ * https://github.com/facebook/react/pull/18796
+ * 使用Lane机制代替 expirationTimes机制，来决定（谁的？）优先级
+ *
+ * https://github.com/zepang/web-clipper-articles/issues/27
+ * 1. 创建fiber时，每一个 fiber 创建的时候其 lanes，childLanes 字段都被初始化为NoLanes；
+ * 2. 创建update时，
+ * 3. 更新过程中对fiber上各个字段的更新
+ */
 import type {FiberRoot} from './ReactInternalTypes';
 import type {Transition} from './ReactFiberTracingMarkerComponent.old';
 
@@ -14,7 +22,7 @@ import type {Transition} from './ReactFiberTracingMarkerComponent.old';
 // our reconciler fork infra, since these leak into non-reconciler packages.
 
 export type Lanes = number;
-export type Lane = number;
+export type Lane = number; // 其中 31 位中占一位的变量称作 lane，占据多位的称为 lanes
 export type LaneMap<T> = Array<T>;
 
 import {
@@ -30,13 +38,17 @@ import {clz32} from './clz32';
 // Lane values below should be kept in sync with getLabelForLane(), used by react-devtools-timeline.
 // If those values are changed that package should be rebuilt and redeployed.
 
-export const TotalLanes = 31;
+// lane模型借鉴了赛车车道的概念，使用31位的二进制表示31条赛道，位数越小的赛道优先级越高，某些相邻的赛道拥有相同优先级。
+
+export const TotalLanes = 31; // 一共31个车道
 
 export const NoLanes: Lanes = /*                        */ 0b0000000000000000000000000000000;
 export const NoLane: Lane = /*                          */ 0b0000000000000000000000000000000;
 
+// 最高的优先级
 export const SyncLane: Lane = /*                        */ 0b0000000000000000000000000000001;
 
+// 用户交互的优先级
 export const InputContinuousHydrationLane: Lane = /*    */ 0b0000000000000000000000000000010;
 export const InputContinuousLane: Lane = /*             */ 0b0000000000000000000000000000100;
 
@@ -445,6 +457,11 @@ export function getLanesToRetrySynchronouslyOnError(root: FiberRoot): Lanes {
   return NoLanes;
 }
 
+/**
+ * 是否包含在同步执行的赛道里
+ * @param lanes
+ * @returns {boolean}
+ */
 export function includesSyncLane(lanes: Lanes) {
   return (lanes & SyncLane) !== NoLanes;
 }
@@ -530,16 +547,38 @@ function laneToIndex(lane: Lane) {
   return pickArbitraryLaneIndex(lane);
 }
 
+/**
+ * 只要a和b任意一个赛道匹配的上，就可以
+ * @param a
+ * @param b
+ * @returns {boolean}
+ */
 export function includesSomeLane(a: Lanes | Lane, b: Lanes | Lane) {
   return (a & b) !== NoLanes;
 }
 
+/**
+ * 判断当前的set是否处于目标subset上，若满足这个条件，可以认为这个lane在对应的扯到区间中
+ * https://zhuanlan.zhihu.com/p/386897467
+ * @param {Lanes} set
+ * @param {Lane | Lanes} subset
+ * @returns {boolean}
+ */
 export function isSubsetOfLanes(set: Lanes, subset: Lanes | Lane) {
-  return (set & subset) === subset;
+  return (set & subset) === subset; // &与操作： 只有都是1时，才会得到1，1&1==1, 1&0==0, 0&0==0
 }
 
+/**
+ * 合并两个lane，然后产生一个新的lane，新的lane会满足a, b两个车道的需要
+ * 比如：当前有个 lane 是 InputContinuousHydrationLane，如果想让当前的 lane 满
+ * 足 InputContinuousLane 的条件，我们可以在保持原本属性不变的情况，
+ * 新增一个 lane，通过 | 操作可以合并两个 lane/lanes
+ * @param a
+ * @param b
+ * @returns {number}
+ */
 export function mergeLanes(a: Lanes | Lane, b: Lanes | Lane): Lanes {
-  return a | b;
+  return a | b; // |或操作：任意一个为1，则结果为1，1&1==1, 1&0==1, 0&0==0
 }
 
 export function removeLanes(set: Lanes, subset: Lanes | Lane): Lanes {

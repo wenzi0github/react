@@ -287,6 +287,9 @@ export function reconcileChildren(
   renderLanes: Lanes,
 ) {
   if (current === null) {
+    // mount阶段，这是一个还未渲染的全新组件，我们不用通过对比最小副作用来更新它的子节点。
+    // 相反，我们可以在他渲染之前，给他们添加上所有的子节点。
+    // 这意味着我们可以不对比副作用来优化这个操作
     // If this is a fresh new component that hasn't been rendered yet, we
     // won't update its child set by applying minimal side-effects. Instead,
     // we will add them all to the child before it gets rendered. That means
@@ -3649,9 +3652,16 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
   return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
 }
 
+/**
+ * 流程图：https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/96509d9313404a0cbb8df590cb57c4a0~tplv-k3u1fbpfcp-zoom-in-crop-mark:1304:0:0:0.awebp?
+ * @param current
+ * @param workInProgress
+ * @param renderLanes
+ * @returns {Fiber|Fiber|*}
+ */
 function beginWork(
-  current: Fiber | null,
-  workInProgress: Fiber,
+  current: Fiber | null, // 与本次循环主体(unitOfWork)对应的 current 树上的节点，即 workInProgress.alternate
+  workInProgress: Fiber, // 本次循环主体(unitOfWork)，也即待处理的 Fiber 节点
   renderLanes: Lanes,
 ): Fiber | null {
   if (__DEV__) {
@@ -3673,6 +3683,7 @@ function beginWork(
   }
 
   if (current !== null) {
+    // update阶段
     const oldProps = current.memoizedProps;
     const newProps = workInProgress.pendingProps;
 
@@ -3684,10 +3695,12 @@ function beginWork(
     ) {
       // If props or context changed, mark the fiber as having performed work.
       // This may be unset if the props are determined to be equal later (memo).
+      // 如果 props 或 context 发生变化，将 Fiber 标记为已执行工作
       didReceiveUpdate = true;
     } else {
       // Neither props nor legacy context changes. Check if there's a pending
       // update or context change.
+      // props和上下文都没有改变，检查是否有挂起的更新或上下文更改。
       const hasScheduledUpdateOrContext = checkScheduledUpdateOrContext(
         current,
         renderLanes,
@@ -3699,6 +3712,7 @@ function beginWork(
         (workInProgress.flags & DidCapture) === NoFlags
       ) {
         // No pending updates or context. Bail out now.
+        // 若没有任何的更新，上下文也没发生变化，直接返回
         didReceiveUpdate = false;
         return attemptEarlyBailoutIfNoScheduledUpdate(
           current,
@@ -3719,6 +3733,7 @@ function beginWork(
       }
     }
   } else {
+    // mount （首屏渲染）时创建新的子 Fiber 节点，并返回该新建节点；
     didReceiveUpdate = false;
 
     if (getIsHydrating() && isForkedChild(workInProgress)) {
@@ -3744,6 +3759,7 @@ function beginWork(
   // move this assignment out of the common path and into each branch.
   workInProgress.lanes = NoLanes;
 
+  // 根据 workInProgress 不同的tag，创建不同的fiber节点
   switch (workInProgress.tag) {
     case IndeterminateComponent: {
       return mountIndeterminateComponent(

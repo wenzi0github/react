@@ -162,11 +162,15 @@ if (__DEV__) {
   };
 }
 
+/**
+ * 初始化一个UpdateQueue，并将 updateQueue 给了 fiber
+ * @param fiber
+ */
 export function initializeUpdateQueue<State>(fiber: Fiber): void {
   const queue: UpdateQueue<State> = {
-    baseState: fiber.memoizedState,
-    firstBaseUpdate: null,
-    lastBaseUpdate: null,
+    baseState: fiber.memoizedState, // 前一次更新计算得出的状态，比如：创建时是声明的初始值 state，更新时是最后得到的 state（除去因优先级不够导致被忽略的 Update）
+    firstBaseUpdate: null, // 更新阶段中由于优先级不够导致被忽略的第一个 Update 对象
+    lastBaseUpdate: null, // 更新阶段中由于优先级不够导致被忽略的最后一个 Update 对象
     shared: {
       pending: null,
       interleaved: null,
@@ -413,9 +417,12 @@ function getStateFromUpdate<State>(
 ): any {
   switch (update.tag) {
     case ReplaceState: {
+      // todo: 类似于 Function Componpent中的useState()?
+      // const [state, setState] = useState();
       const payload = update.payload;
       if (typeof payload === 'function') {
         // Updater function
+        // 若payload是function，则直接返回函数执行后的结果（不再与之前的数据进行合并）
         if (__DEV__) {
           enterDisallowedContextReadInDEV();
         }
@@ -436,6 +443,7 @@ function getStateFromUpdate<State>(
         }
         return nextState;
       }
+      // 若不是function类型，则传入什么，返回什么
       // State object
       return payload;
     }
@@ -445,13 +453,17 @@ function getStateFromUpdate<State>(
     }
     // Intentional fallthrough
     case UpdateState: {
+      // Class Component中的setState流程
+      // this.state = {a:1};
+      // this.setState();
       const payload = update.payload;
-      let partialState;
+      let partialState; // 临时变量，用于存储传入进来的新state结果，方便最后进行assign合并处理
       if (typeof payload === 'function') {
         // Updater function
         if (__DEV__) {
           enterDisallowedContextReadInDEV();
         }
+        // 若传入的是function，则获取函数执行后的结果
         partialState = payload.call(instance, prevState, nextProps);
         if (__DEV__) {
           if (
@@ -469,13 +481,16 @@ function getStateFromUpdate<State>(
         }
       } else {
         // Partial state object
+        // 若是普通object的变量，则直接赋值
         partialState = payload;
       }
       if (partialState === null || partialState === undefined) {
         // Null and undefined are treated as no-ops.
+        // 若得到的结果是null，则直接返回之前的数据
         return prevState;
       }
       // Merge the partial state and the previous state.
+      // 与之前的state数据进行合并
       return assign({}, prevState, partialState);
     }
     case ForceUpdate: {
@@ -486,6 +501,13 @@ function getStateFromUpdate<State>(
   return prevState;
 }
 
+/**
+ *
+ * @param workInProgress
+ * @param props
+ * @param instance
+ * @param renderLanes
+ */
 export function processUpdateQueue<State>(
   workInProgress: Fiber,
   props: any,

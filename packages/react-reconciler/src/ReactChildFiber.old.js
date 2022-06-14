@@ -262,6 +262,15 @@ function resolveLazy(lazyType) {
 // to be able to optimize each path individually by branching early. This needs
 // a compiler or we can do it manually. Helpers that don't need this branching
 // live outside of this function.
+/**
+ * shouldTrackSideEffects ，这个参数的字面意思是“是否需要追踪副作用”，所谓的“副作用”，指的就是
+ * 是否需要做 DOM 操作，需要的话就会在当前 Fiber 节点中打上 EffectTag ，即“追踪”副作用；
+ * 而也仅有在 update 的时候，才需要“追踪副作用”，即把 current 这个 Fiber 节点与本次更新组件
+ * 状态后的 ReactElement 做对比(diff)，然后得出本次更新的 Fiber 节点，以及在该节点上打上 diff 的结果 —— EffectTag
+ * @param shouldTrackSideEffects
+ * @returns {(function(Fiber, (Fiber|null), *, Lanes): (Fiber|null))|*}
+ * @constructor
+ */
 function ChildReconciler(shouldTrackSideEffects) {
   function deleteChild(returnFiber: Fiber, childToDelete: Fiber): void {
     if (!shouldTrackSideEffects) {
@@ -1242,11 +1251,12 @@ function ChildReconciler(shouldTrackSideEffects) {
   // This API will tag the children with the side-effect of the reconciliation
   // itself. They will be added to the side-effect list as we pass through the
   // children and the parent.
+  // https://juejin.cn/post/7017702556629467167#heading-7
   function reconcileChildFibers(
-    returnFiber: Fiber,
-    currentFirstChild: Fiber | null,
-    newChild: any,
-    lanes: Lanes,
+    returnFiber: Fiber, // 当前 Fiber 节点，即 workInProgress
+    currentFirstChild: Fiber | null, // current 树上对应的当前 Fiber 节点的第一个子 Fiber 节点，mount 时为 null
+    newChild: any, // 子节点(ReactElement)
+    lanes: Lanes, // 优先级相关
   ): Fiber | null {
     // This function is not recursive.
     // If the top level item is an array, we treat it as a set of children,
@@ -1347,7 +1357,7 @@ function ChildReconciler(shouldTrackSideEffects) {
 }
 
 export const reconcileChildFibers = ChildReconciler(true);
-export const mountChildFibers = ChildReconciler(false);
+export const mountChildFibers = ChildReconciler(false); // 是否要追踪副作用，初始化时不用追踪
 
 export function cloneChildFibers(
   current: Fiber | null,
