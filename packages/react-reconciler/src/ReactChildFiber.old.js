@@ -1141,11 +1141,15 @@ function ChildReconciler(shouldTrackSideEffects) {
     element: ReactElement,
     lanes: Lanes,
   ): Fiber {
+    // element是workInProgress中的，表示正在构建中的
     const key = element.key;
+
+    // child: 现在正在使用的child
     let child = currentFirstChild;
     while (child !== null) {
       // TODO: If key === null and child.key === null, then this only applies to
       // the first item in the list.
+      // 比较key值是否有变化，这是复用Fiber节点的先决条件
       if (child.key === key) {
         const elementType = element.type;
         if (elementType === REACT_FRAGMENT_TYPE) {
@@ -1175,10 +1179,10 @@ function ChildReconciler(shouldTrackSideEffects) {
               elementType.$$typeof === REACT_LAZY_TYPE &&
               resolveLazy(elementType) === child.type)
           ) {
-            deleteRemainingChildren(returnFiber, child.sibling);
-            const existing = useFiber(child, element.props);
-            existing.ref = coerceRef(returnFiber, child, element);
-            existing.return = returnFiber;
+            deleteRemainingChildren(returnFiber, child.sibling); // 已找到可复用Fiber子节点且确认只有一个子节点，因此标记删除掉该child节点的所有sibling节点
+            const existing = useFiber(child, element.props); // 复用child节点
+            existing.ref = coerceRef(returnFiber, child, element); // 处理ref
+            existing.return = returnFiber; // 重置新Fiber节点的return指针，指向当前Fiber节点
             if (__DEV__) {
               existing._debugSource = element._source;
               existing._debugOwner = element._owner;
@@ -1190,9 +1194,10 @@ function ChildReconciler(shouldTrackSideEffects) {
         deleteRemainingChildren(returnFiber, child);
         break;
       } else {
+        // 若key不一样，不能复用，标记删除
         deleteChild(returnFiber, child);
       }
-      child = child.sibling;
+      child = child.sibling; // 指针指向下一个sibling节点，尝试进行复用
     }
 
     if (element.type === REACT_FRAGMENT_TYPE) {
@@ -1258,7 +1263,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     newChild: any, // 子节点(ReactElement)
     lanes: Lanes, // 优先级相关
   ): Fiber | null {
-    // This function is not recursive.
+    // This function is not recursive. // 该函数不是递归函数
     // If the top level item is an array, we treat it as a set of children,
     // not as a fragment. Nested arrays on the other hand will be treated as
     // fragment nodes. Recursion happens at the normal flow.

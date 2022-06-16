@@ -103,6 +103,7 @@ ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = functio
 ): void {
   const root = this._internalRoot; // FiberRootNode
   if (root === null) {
+    // 若root为null，说明该树已被卸载
     throw new Error('Cannot update an unmounted root.');
   }
 
@@ -239,7 +240,13 @@ export function createRoot(
     }
   }
 
-  // 创建一个fiber类型的节点
+  /**
+   * 创建一个FiberRootNode类型的节点，fiberRootNode 是整个应用的根节点
+   * 在react的更新过程中，会有current(当前正在展示)和workInProgress(将要更新的)两个fiber树，
+   * fiberRootNode 默认指向到current,
+   * workInProgress更新并commit完毕后，fiberRootNode会指向到workProgress
+   * @type {OpaqueRoot}
+   */
   const root = createContainer(
     container,
     ConcurrentRoot, // 1
@@ -264,8 +271,7 @@ export function createRoot(
   // 绑定所有可支持的事件到 rootContainerElement 节点上
   listenToAllSupportedEvents(rootContainerElement);
 
-  // 使用ReactDOMRoot实例化一个对象
-  // 属性_internalRoot 指向到到 root
+  // 使用ReactDOMRoot实例化一个对象，属性_internalRoot 指向到到 root
   // 并有两个方法 render() 和 unmount()
   return new ReactDOMRoot(root);
 }

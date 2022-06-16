@@ -3335,6 +3335,8 @@ function bailoutOnAlreadyFinishedWork(
 
   markSkippedUpdateLanes(workInProgress.lanes);
 
+  // 判断当前fiber节点的后代节点中，有没有需要在本次render过程中处理待更新任务；
+  // 如果没有的话，那么以当前 Fiber 节点为根节点的 Fiber 子树，就满足“剪枝”的要求了。
   // Check if the children have any pending work.
   if (!includesSomeLane(renderLanes, workInProgress.childLanes)) {
     // The children don't have any work either. We can skip them.
@@ -3353,6 +3355,8 @@ function bailoutOnAlreadyFinishedWork(
     }
   }
 
+  // 当前节点没有任务需要处理，但后代节点中仍有本次 render 过程需要处理的更新任务，
+  // 则克隆 current 树上对应的子 Fiber 节点并返回，作为下次 performUnitOfWork 的主体。
   // This fiber doesn't have work, but its subtree does. Clone the child
   // fibers and continue.
   cloneChildFibers(current, workInProgress);

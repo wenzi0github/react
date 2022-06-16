@@ -50,8 +50,14 @@ export type RootState = {
 };
 
 /**
+ * /**
+ * fiberRootNode是整个应用的根节点（类似于链表的空头指针，仅用于指向到哪个组件树上），rootFiber是<App />所在组件树的根节点
+ * https://react.iamkasong.com/process/doubleBuffer.html
+ *
+ * 之所以要区分fiberRootNode与rootFiber，是因为在应用中我们可以多次调用ReactDOM.render渲染不同的组件树，
+ * 他们会拥有不同的rootFiber。但是整个应用的根节点只有一个，那就是fiberRootNode
  * @param {HTMLElement} containerInfo
- * @param {RootTag} tag
+ * @param {RootTag} tag fiber节点的类型(0|1)，0是之前legacy模式，1是现在最新的Concurrent模式，通过createRoot()传入的是1
  * @param {boolean} hydrate
  * @param identifierPrefix
  * @param onRecoverableError
@@ -145,7 +151,7 @@ function FiberRootNode(
 /**
  * 创建FiberRoot
  * @param {*} containerInfo
- * @param {*} tag
+ * @param {RootTag} tag fiber节点的类型，0是之前legacy模式，1是现在最新的Concurrent模式，通过createRoot()传入的是1
  * @param {*} hydrate
  * @param {*} hydrationCallbacks
  * @param {*} isStrictMode
@@ -167,6 +173,13 @@ export function createFiberRoot(
   onRecoverableError: null | ((error: mixed) => void),
   transitionCallbacks: null | TransitionTracingCallbacks,
 ): FiberRoot {
+  /**
+   * fiberRootNode是整个应用的根节点（类似于链表的空头指针，仅用于指向到哪个组件树上），rootFiber是<App />所在组件树的根节点
+   * https://react.iamkasong.com/process/doubleBuffer.html
+   *
+   * 之所以要区分fiberRootNode与rootFiber，是因为在应用中我们可以多次调用ReactDOM.render渲染不同的组件树，
+   * 他们会拥有不同的rootFiber。但是整个应用的根节点只有一个，那就是fiberRootNode
+   */
   const root: FiberRoot = (new FiberRootNode(
     containerInfo,
     tag,
@@ -184,7 +197,9 @@ export function createFiberRoot(
 
   // Cyclic construction. This cheats the type system right now because
   // stateNode is any.
-  // createHostRootFiber -> createFiber -> new FiberNode(tag, pendingProps, key, mode)
+  // 创建调用的链路：createHostRootFiber -> createFiber -> new FiberNode(tag, pendingProps, key, mode)
+  // 最终会调用 new FiberNode() 来创建uninitializedFiber
+  // 主要的属性有：{ tag, stateNode, return, child, sibling, mode, alternate, memoizedState }
   const uninitializedFiber = createHostRootFiber(
     tag,
     isStrictMode,
@@ -229,6 +244,11 @@ export function createFiberRoot(
     uninitializedFiber.memoizedState = initialState;
   }
 
+  /**
+   * uninitializedFiber.updateQueue = {
+   *  baseState: uninitializedFiber.memoizedState
+   * };
+   */
   initializeUpdateQueue(uninitializedFiber);
 
   return root;

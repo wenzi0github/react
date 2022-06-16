@@ -202,7 +202,38 @@ const ReactElement = function(type, key, ref, self, source, owner, props) {
 };
 
 /**
+babel在线转换示意：https://babeljs.io/repl/#?browsers=defaults%2C%20not%20ie%2011%2C%20not%20ie_mob%2011&build=&builtIns=false&corejs=3.21&spec=false&loose=false&code_lz=JYWwDg9gTgLgBAJQKYEMDGMAiB5AsnAMyghDgHIpUMBaAExLIG4AoZtCAOwGd4BBMMHAC8cABQBKYQD44Ab2YBISjACuUDmIA8tYADcpzOEbgLNYA8csnNXMCg5SAFkgA2LiHADu0F7U0B6W3sLKyMA80NjAJ19cRYAXxZ2bnhiCHgRZHQsPAA6NEoUGCQECHTRejQVECQOGFyAcyQYAFEXJBq6gCEATwBJWlEKMpgySRQuOAAJABVcABk2jtqYOOY0-soOWiQoUUjNLIxcgGUYKGAMXAgdkLD-QX8QgKP6s4urm6QDNaA&debug=false&forceAllTransforms=false&shippedProposals=false&circleciRepo=&evaluate=false&fileSize=false&timeTravel=false&sourceType=module&lineWrap=true&presets=react%2Ctypescript&prettier=false&targets=&version=7.18.5&externalPlugins=&assumptions=%7B%7D
+const App = () => {
+	return (<div>
+    <p>
+        <span className="dd">hello world</span>
+        <span>123</span>
+      </p>
+  </div>);
+};
+
+通过babel转换后：
+
+const App = () => {
+  return jsx("div", {
+    children: jsx("p", {
+      children: [
+        jsx("span", {
+          className: "dd",
+          children: "hello world"
+        }),
+        _jsx("span", {
+          children: "123"
+        })
+      ]
+    })
+  });
+};
+
+ */
+/**
  * https://github.com/reactjs/rfcs/pull/107
+ * 文档：https://zh-hans.reactjs.org/blog/2020/09/22/introducing-the-new-jsx-transform.html
  * @param {*} type
  * @param {object} props
  * @param {string} key

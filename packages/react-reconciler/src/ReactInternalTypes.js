@@ -75,16 +75,20 @@ export type Fiber = {|
   // minimize the number of objects created during the initial render.
 
   // Tag identifying the type of fiber.
+  // 用于标记fiber的WorkTag类型，主要表示当前fiber代表的组件类型如FunctionComponent、ClassComponent等
   tag: WorkTag,
 
   // Unique identifier of this child.
+  // ReactItem里的key
   key: null | string,
 
   // The value of element.type which is used to preserve the identity during
   // reconciliation of this child.
+  // ReactElement.type，调用`createElement`的第一个参数
   elementType: any,
 
   // The resolved function/class/ associated with this fiber.
+  // 当前节点的类型
   type: any,
 
   // The local state associated with this fiber.

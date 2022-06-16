@@ -1921,6 +1921,7 @@ function performUnitOfWork(unitOfWork: Fiber): void {
   resetCurrentDebugFiberInDEV();
   unitOfWork.memoizedProps = unitOfWork.pendingProps;
   if (next === null) {
+    // 无需关心当前节点的子fiber节点
     // If this doesn't spawn new work, complete the current work.
     completeUnitOfWork(unitOfWork);
   } else {
@@ -1930,6 +1931,14 @@ function performUnitOfWork(unitOfWork: Fiber): void {
   ReactCurrentOwner.current = null;
 }
 
+/**
+ * 1. 调用completeWork对当前fiber节点进行处理；question: completeWork对fiber进行了哪些处理
+ * 2. 若还有兄弟节点sibling，则在当前循环中执行兄弟节点；
+ * 3. 当前节点和兄弟全部遍历完后，则返回其父级节点return；
+ * 4. 直到该completedWork节点为null时，停止循环；回到上一层的performUnitOfWork里
+ * 流程图： https://p9-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/b8f119c4a36c45fe832b51d59729e380~tplv-k3u1fbpfcp-zoom-in-crop-mark:1304:0:0:0.awebp?
+ * @param unitOfWork
+ */
 function completeUnitOfWork(unitOfWork: Fiber): void {
   // Attempt to complete the current unit of work, then move to the next
   // sibling. If there are no more siblings, return to the parent fiber.
@@ -1941,8 +1950,11 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
     const current = completedWork.alternate;
     const returnFiber = completedWork.return;
 
+    // 检测任务是否正常执行，有没有抛出异常
+    // Incomplete表示未正常完成，若匹配后是NoFlags，则表示没匹配上，说明completedWork正常完成了
     // Check if the work completed or if something threw.
     if ((completedWork.flags & Incomplete) === NoFlags) {
+      // 只要 beginWork 阶段正常执行后（即执行无异常），都会进到这一段逻辑来
       setCurrentDebugFiberInDEV(completedWork);
       let next;
       if (
@@ -1958,6 +1970,10 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
       }
       resetCurrentDebugFiberInDEV();
 
+      /**
+       * 假如 completeWork 返回不为空，则进入到下一次的performUnitOfWork循环中
+       * 但这种情况太罕见，目前我只看到Suspense相关会有返回，因此此代码段姑且认为不会执行
+       */
       if (next !== null) {
         // Completing this fiber spawned new work. Work on that next.
         workInProgress = next;
@@ -2011,12 +2027,14 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
       }
     }
 
+    // 若有兄弟节点，则继续执行兄弟节点
     const siblingFiber = completedWork.sibling;
     if (siblingFiber !== null) {
       // If there is more work to do in this returnFiber, do that next.
       workInProgress = siblingFiber;
       return;
     }
+    // 当前节点和兄弟节点全部遍历完毕，中的返回到其父节点
     // Otherwise, return to the parent
     completedWork = returnFiber;
     // Update the next thing we're working on in case something throws.

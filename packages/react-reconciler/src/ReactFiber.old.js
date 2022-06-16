@@ -426,6 +426,13 @@ export function resetWorkInProgress(workInProgress: Fiber, renderLanes: Lanes) {
   return workInProgress;
 }
 
+/**
+ * 创建fiber树的根节点
+ * @param {RootTag} tag
+ * @param {boolean} isStrictMode 是否是严格模式，默认是false
+ * @param concurrentUpdatesByDefaultOverride 默认情况下的并发更新覆盖，默认为false
+ * @returns {Fiber}
+ */
 export function createHostRootFiber(
   tag: RootTag,
   isStrictMode: boolean,
@@ -433,6 +440,7 @@ export function createHostRootFiber(
 ): Fiber {
   let mode;
   if (tag === ConcurrentRoot) {
+    // 新版支持的并发模式
     mode = ConcurrentMode;
     if (isStrictMode === true) {
       mode |= StrictLegacyMode;

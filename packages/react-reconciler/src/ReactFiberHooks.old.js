@@ -1500,6 +1500,13 @@ function forceStoreRerender(fiber) {
   scheduleUpdateOnFiber(fiber, SyncLane, NoTimestamp);
 }
 
+/**
+ * useState分为mountState和updateState，根据是否是初次执行，分别进行调用
+ * https://docs.qq.com/flowchart/DS2F0dGFIVU1ieWda?u=7314a95fb28d4269b44c0026faa673b7
+ * 这次初始化时调用
+ * @param initialState
+ * @returns {[*, Dispatch<BasicStateAction<S>>]}
+ */
 function mountState<S>(
   initialState: (() => S) | S,
 ): [S, Dispatch<BasicStateAction<S>>] {
@@ -1514,8 +1521,8 @@ function mountState<S>(
     interleaved: null,
     lanes: NoLanes,
     dispatch: null,
-    lastRenderedReducer: basicStateReducer,
-    lastRenderedState: (initialState: any),
+    lastRenderedReducer: basicStateReducer, // 上次render后使用的reducer
+    lastRenderedState: (initialState: any), // 上次render后的state
   };
   hook.queue = queue;
   const dispatch: Dispatch<
@@ -2224,6 +2231,12 @@ function dispatchReducerAction<S, A>(
   markUpdateInDevTools(fiber, lane, action);
 }
 
+/**
+ * 派生一个setState方法
+ * @param {Fiber} fiber hook链表
+ * @param {UpdateQueue<S, A>} queue
+ * @param {A} action 即执行setState()传入的数据，可能是数据，也能是方法，setState(1) 或 setState(prevState => prevState+1);
+ */
 function dispatchSetState<S, A>(
   fiber: Fiber,
   queue: UpdateQueue<S, A>,
@@ -2262,7 +2275,12 @@ function dispatchSetState<S, A>(
       // The queue is currently empty, which means we can eagerly compute the
       // next state before entering the render phase. If the new state is the
       // same as the current state, we may be able to bail out entirely.
-      const lastRenderedReducer = queue.lastRenderedReducer;
+      /**
+       * 当前队列为空，说明我们迫切地想在进入渲染之前得到state的值；
+       * 若新的state与现在的state一样，我们可能可以直接退出
+       * @type {null}
+       */
+      const lastRenderedReducer = queue.lastRenderedReducer; // 上次render后的reducer，在mount时即basicStateReducer
       if (lastRenderedReducer !== null) {
         let prevDispatcher;
         if (__DEV__) {
@@ -2270,7 +2288,7 @@ function dispatchSetState<S, A>(
           ReactCurrentDispatcher.current = InvalidNestedHooksDispatcherOnUpdateInDEV;
         }
         try {
-          const currentState: S = (queue.lastRenderedState: any);
+          const currentState: S = (queue.lastRenderedState: any); // 上次render后的state，mount时为传入的initialState
           const eagerState = lastRenderedReducer(currentState, action);
           // Stash the eagerly computed state, and the reducer used to compute
           // it, on the update object. If the reducer hasn't changed by the
@@ -2283,6 +2301,8 @@ function dispatchSetState<S, A>(
             // It's still possible that we'll need to rebase this update later,
             // if the component re-renders for a different reason and by that
             // time the reducer has changed.
+            // 若这次得到的state与上次的一样，则不再重新渲染
+            // 不过因为一些其他原因？
             return;
           }
         } catch (error) {
@@ -2294,6 +2314,8 @@ function dispatchSetState<S, A>(
         }
       }
     }
+    // 新state与现在的state不一样，开启新的调度
+    // todo: scheduleUpdateOnFiber 是干嘛的？
     const eventTime = requestEventTime();
     const root = scheduleUpdateOnFiber(fiber, lane, eventTime);
     if (root !== null) {

@@ -240,7 +240,7 @@ function flushWork(hasTimeRemaining, initialTime) {
 
 /**
  * 循环获取当前任务
- * https://docs.qq.com/flowchart/DS2F0dGFIVU1ieWda?u=7314a95fb28d4269b44c0026faa673b7
+ * https://doc.weixin.qq.com/flowchart/f3_m_PjyQHcDnBhOj?scode=AJEAIQdfAAo5BjKYTBAH8APgbDAK4&sid=AH9iUQA_Z28Gw2llAK5UVAAA&force_open_in_wx=1
  * @param {boolean} hasTimeRemaining 是否还有剩余时间，在flushWork中调用时，强制为true
  * @param {number} initialTime 当前时间
  * @returns {boolean}
@@ -261,7 +261,7 @@ function workLoop(hasTimeRemaining, initialTime) {
       currentTask.expirationTime > currentTime &&
       (!hasTimeRemaining || shouldYieldToHost())
     ) {
-      // 这个任务还没过期，而且没有剩余时间了或者有了更高优的任务
+      // 这个任务还没过期，但没有剩余时间了或者有了更高优的任务
       // 这时则需要让出主程
       // This currentTask hasn't expired, and we've reached the deadline.
       break;
@@ -295,12 +295,13 @@ function workLoop(hasTimeRemaining, initialTime) {
         }
       }
       // 从延迟队列里将可以执行的任务放到taskQueue里
+      // 根据currentTime调度timerQueue和taskQueue中的任务
       advanceTimers(currentTime);
     } else {
       // 若不为function类型，则只推出
       pop(taskQueue);
     }
-    // 取出下一个任务
+    // 获取下一个任务
     currentTask = peek(taskQueue);
   }
   // Return whether there's additional work
