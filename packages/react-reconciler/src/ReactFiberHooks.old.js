@@ -656,6 +656,11 @@ function updateWorkInProgressHook(): Hook {
   // clone, or a work-in-progress hook from a previous render pass that we can
   // use as a base. When we reach the end of the base list, we must switch to
   // the dispatcher used for mounts.
+  /**
+   * 获取下一个需要执行的hook
+   * 1. 若当前没有正在执行的hook；
+   * 2. 若当前有执行的hook，则获取其下一个hook即可；
+   */
   let nextCurrentHook: null | Hook;
   if (currentHook === null) {
     const current = currentlyRenderingFiber.alternate;
@@ -758,6 +763,12 @@ function updateReducer<S, I, A>(
   initialArg: I,
   init?: I => S,
 ): [S, Dispatch<A>] {
+  /**
+   * 几个问题还没明白：
+   * 1. updateWorkInProgressHook()方法是如何得到当前执行的hook的？
+   * 2. currentHook这个全局变量在哪儿控制的？currentHook和hook是同一个吗？
+   * @type {Hook}
+   */
   const hook = updateWorkInProgressHook();
   const queue = hook.queue;
 
@@ -775,12 +786,16 @@ function updateReducer<S, I, A>(
   let baseQueue = current.baseQueue;
 
   // The last pending update that hasn't been processed yet.
+  // 若hook中还有等待的update没有处理（低优先级的更新？）
   const pendingQueue = queue.pending;
   if (pendingQueue !== null) {
     // We have new updates that haven't been processed yet.
     // We'll add them to the base queue.
+    // 我们还有新的updates没有处理
     if (baseQueue !== null) {
       // Merge the pending queue and the base queue.
+      // 调整baseQueue和pendingQueue的next指向
+      // 此时，baseQueue和pendingQueue两个，形成了一个单向环形链表
       const baseFirst = baseQueue.next;
       const pendingFirst = pendingQueue.next;
       baseQueue.next = pendingFirst;
@@ -796,18 +811,20 @@ function updateReducer<S, I, A>(
         );
       }
     }
+
+    // pendingQueue头指针->baseQueue->pendingQueue
     current.baseQueue = baseQueue = pendingQueue;
-    queue.pending = null;
+    queue.pending = null; // 清空pending，下次render时就进不来了
   }
 
   if (baseQueue !== null) {
     // We have a queue to process.
     const first = baseQueue.next;
-    let newState = current.baseState;
+    let newState = current.baseState; // 上次的state值，每次循环时都计算得到该值，然后供下次循环时使用
 
-    let newBaseState = null;
-    let newBaseQueueFirst = null;
-    let newBaseQueueLast = null;
+    let newBaseState = null; // 下次更新时要使用的初始值，若update任务全部执行了则值为newState，若有低优先级的没有执行，则值为newState
+    let newBaseQueueFirst = null; // 下次更新时的链表，若update优先级不足直接存放进去，不执行；若优先级满足，则也存放进去，同时本地render时执行该update
+    let newBaseQueueLast = null; // 下次更新时的链表的尾指针，用于存储数据，并一直指向该链表最后的那个update节点
     let update = first;
     do {
       const updateLane = update.lane;
@@ -815,6 +832,11 @@ function updateReducer<S, I, A>(
         // Priority is insufficient. Skip this update. If this is the first
         // skipped update, the previous update/state is the new base
         // update/state.
+        // 优先级不足，跳过此更新。若这是第一个跳过的更新，则之前的更新/状态就是现在的更新和状态
+        /**
+         * 将当前的状态赋值给新的节点存储起来，方便下次render时调用
+         * @type {{next: *, action: (A|*), hasEagerState: boolean, lane: Lane, eagerState: (S|*)}}
+         */
         const clone: Update<S, A> = {
           lane: updateLane,
           action: update.action,
@@ -823,9 +845,16 @@ function updateReducer<S, I, A>(
           next: (null: any),
         };
         if (newBaseQueueLast === null) {
+          // 若待更新链表为空，则first指向到clone
+          // 将该state给了newBaseState方便下次循环时使用
           newBaseQueueFirst = newBaseQueueLast = clone;
           newBaseState = newState;
         } else {
+          // 若待更新链表不为空，则clone向后追加即可
+          // newBaseQueueLast.next = clone;
+          // newBaseQueueLast = clone;
+          // 即newBaseQueueLast = newBaseQueueLast.next，指向向后移动了一个节点
+          // newState在当前hook是共用的，即若跳过的话，第一次赋值时即可
           newBaseQueueLast = newBaseQueueLast.next = clone;
         }
         // Update the remaining priority in the queue.
@@ -838,12 +867,17 @@ function updateReducer<S, I, A>(
         markSkippedUpdateLanes(updateLane);
       } else {
         // This update does have sufficient priority.
+        // 此更新确实具有足够的优先级
 
         if (newBaseQueueLast !== null) {
+          // 调整该update的优先级，并将该更新存放到render中，方便下次render时执行？
+          // 如果 newBaseQueueLast 为空的时候呢？为什么就不存储了？
+          // 若有低优先级的任务，则需要重新从头完整的执行一遍；若没有，则不用从头执行，因此则不存储
           const clone: Update<S, A> = {
             // This update is going to be committed so we never want uncommit
             // it. Using NoLane works because 0 is a subset of all bitmasks, so
             // this will never be skipped by the check above.
+            // 该update需要执行，所以我们永远不能跳过他，使用NoLane优先级，可以避免上面的判断会跳过该步骤
             lane: NoLane,
             action: update.action,
             hasEagerState: update.hasEagerState,
@@ -857,6 +891,7 @@ function updateReducer<S, I, A>(
         if (update.hasEagerState) {
           // If this update is a state update (not a reducer) and was processed eagerly,
           // we can use the eagerly computed state
+          // 如果这个更新是状态更新（不是reducer）并且被急切处理，我们可以使用急切计算的状态
           newState = ((update.eagerState: any): S);
         } else {
           const action = update.action;
@@ -867,22 +902,25 @@ function updateReducer<S, I, A>(
     } while (update !== null && update !== first);
 
     if (newBaseQueueLast === null) {
+      // 若没有任何低优先级的任务，所有的update都执行了
       newBaseState = newState;
     } else {
+      // 若有低优先级的update任务，则next指针指向到第1个，形成单向环形链表
       newBaseQueueLast.next = (newBaseQueueFirst: any);
     }
 
     // Mark that the fiber performed work, but only if the new state is
     // different from the current state.
+    // 若newState和之前的state不一样，则标记该fiber需要更新
     if (!is(newState, hook.memoizedState)) {
       markWorkInProgressReceivedUpdate();
     }
 
-    hook.memoizedState = newState;
-    hook.baseState = newBaseState;
-    hook.baseQueue = newBaseQueueLast;
+    hook.memoizedState = newState; // 整个update链表执行完，得到的newState，用于本次渲染时使用
+    hook.baseState = newBaseState; // 这次计算后得到的newState
+    hook.baseQueue = newBaseQueueLast; // 新的update链表，可能为空
 
-    queue.lastRenderedState = newState;
+    queue.lastRenderedState = newState; // 将本次的state存储为上次rendered后的值
   }
 
   // Interleaved updates are stored on a separate queue. We aren't going to
@@ -1501,6 +1539,13 @@ function forceStoreRerender(fiber) {
 }
 
 /**
+ * 几个问题：
+ * 1. 多个useState初始化怎么处理？
+ * 2. 同一个useState，在同一个render()流程中，执行了多次，怎么处理？
+ * 3. currentlyRenderingFiber什么时候初始化？挂载的都是哪些hook？同一个fiber节点里所有的hook？
+ */
+
+/**
  * useState分为mountState和updateState，根据是否是初次执行，分别进行调用
  * https://docs.qq.com/flowchart/DS2F0dGFIVU1ieWda?u=7314a95fb28d4269b44c0026faa673b7
  * 这次初始化时调用
@@ -1510,12 +1555,20 @@ function forceStoreRerender(fiber) {
 function mountState<S>(
   initialState: (() => S) | S,
 ): [S, Dispatch<BasicStateAction<S>>] {
+  /**
+   * 创建一个hook节点，并将其挂载到currentlyRenderingFiber链表的最后
+   * @type {Hook}
+   */
   const hook = mountWorkInProgressHook();
   if (typeof initialState === 'function') {
     // $FlowFixMe: Flow doesn't like mixed types
     initialState = initialState();
   }
+  // 依托于 js 中的对象引用的特性：在不同的地方操作相同的对象，所有使用该对象的数据都会发生变化
+  // 链表中该hook节点的属性也会同步修改为initialState
   hook.memoizedState = hook.baseState = initialState;
+
+  // 为该hook绑定更新的链表
   const queue: UpdateQueue<S, BasicStateAction<S>> = {
     pending: null,
     interleaved: null,
@@ -1535,6 +1588,12 @@ function mountState<S>(
   return [hook.memoizedState, dispatch];
 }
 
+/**
+ * useState()的更新阶段
+ * 传入要更新的值initialState，并返回新的[state, setState]
+ * @param initialState
+ * @returns {[(*|S), Dispatch<S>]}
+ */
 function updateState<S>(
   initialState: (() => S) | S,
 ): [S, Dispatch<BasicStateAction<S>>] {
@@ -2233,7 +2292,8 @@ function dispatchReducerAction<S, A>(
 
 /**
  * 派生一个setState方法
- * @param {Fiber} fiber hook链表
+ * 同一个setState方法多次调用时，均会放到queue.pending的链表中
+ * @param {Fiber} fiber 当前的fiber节点
  * @param {UpdateQueue<S, A>} queue
  * @param {A} action 即执行setState()传入的数据，可能是数据，也能是方法，setState(1) 或 setState(prevState => prevState+1);
  */
@@ -2265,6 +2325,12 @@ function dispatchSetState<S, A>(
   if (isRenderPhaseUpdate(fiber)) {
     enqueueRenderPhaseUpdate(queue, update);
   } else {
+    /**
+     * 将update形成单向环形链表，并放到queue.pending里
+     * 即hook.queue.pending里，存放着update的数据
+     * queue.pending指向到update链表的最后一个元素，next即是第1个元素
+     * 示意图： https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/31b3aa9d0f5d4284af1db2c73ea37b9a~tplv-k3u1fbpfcp-zoom-in-crop-mark:1304:0:0:0.awebp
+     */
     enqueueUpdate(fiber, queue, update, lane);
 
     const alternate = fiber.alternate;
