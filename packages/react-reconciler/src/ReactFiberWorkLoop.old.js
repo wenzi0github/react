@@ -729,6 +729,13 @@ function markUpdateLaneFromFiberToRoot(
   }
 }
 
+/**
+ * 是否是交互产生的更新
+ * 渲染过程产生的update，通常由并发的用户输入产生
+ * @param fiber
+ * @param lane
+ * @returns {boolean}
+ */
 export function isInterleavedUpdate(fiber: Fiber, lane: Lane) {
   return (
     // TODO: Optimize slightly by comparing to root that fiber belongs to.

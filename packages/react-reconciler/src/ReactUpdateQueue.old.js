@@ -215,7 +215,7 @@ export function createUpdate(eventTime: number, lane: Lane): Update<*> {
 }
 
 /**
- * 将update添加到fiber的updateQueue中
+ * 将update添加到fiber的updateQueue.shared.pending中
  * https://github.com/wenzi0github/react/issues/7
  * https://zhuanlan.zhihu.com/p/386897467
  * @param fiber
