@@ -1652,6 +1652,7 @@ function getCallerStackFrame(): string {
 }
 
 function mountRef<T>(initialValue: T): {|current: T|} {
+  // 创建一个hook，并将其放到hook链表中
   const hook = mountWorkInProgressHook();
   if (enableUseRefAccessWarning) {
     if (__DEV__) {
@@ -1714,6 +1715,7 @@ function mountRef<T>(initialValue: T): {|current: T|} {
       return ref;
     }
   } else {
+    // 存储数据，并返回这个数据
     const ref = {current: initialValue};
     hook.memoizedState = ref;
     return ref;
