@@ -1,3 +1,3 @@
 # 学习文档
 
-this is lerna react source docs.
+this is learn react source docs.
