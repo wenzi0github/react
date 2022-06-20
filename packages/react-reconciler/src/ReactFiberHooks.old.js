@@ -2439,6 +2439,8 @@ function enqueueUpdate<S, A>(
     }
     queue.interleaved = update;
   } else {
+    // 单项环形链表的创建
+    // https://github.com/wenzi0github/react/issues/7
     const pending = queue.pending;
     if (pending === null) {
       // This is the first update. Create a circular list.
