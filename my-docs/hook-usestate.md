@@ -6,6 +6,8 @@
 
 [useState的流程图](https://docs.qq.com/flowchart/DS2F0dGFIVU1ieWda?u=7314a95fb28d4269b44c0026faa673b7)
 
+![react hooks](https://miro.medium.com/max/1368/1*R-oovJm4IQBLDjZy6DvbBg.png)
+
 我们在使用useState时，通常会得到两个值，一个是用于在jsx渲染使用，一个是set方法，用于修改该值。
 
 ```jsx

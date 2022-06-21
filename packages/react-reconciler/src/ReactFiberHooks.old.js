@@ -149,6 +149,9 @@ export type Hook = {|
   next: Hook | null,
 |};
 
+/**
+ * effect的格式
+ */
 export type Effect = {|
   tag: HookFlags,
   create: () => (() => void) | void,
@@ -1607,6 +1610,7 @@ function rerenderState<S>(
 }
 
 function pushEffect(tag, create, destroy, deps) {
+  // 新创建一个effect的hook
   const effect: Effect = {
     tag,
     create,
@@ -1617,14 +1621,22 @@ function pushEffect(tag, create, destroy, deps) {
   };
   let componentUpdateQueue: null | FunctionComponentUpdateQueue = (currentlyRenderingFiber.updateQueue: any);
   if (componentUpdateQueue === null) {
+    // 若updateQueue为空，则创建
     componentUpdateQueue = createFunctionComponentUpdateQueue();
     currentlyRenderingFiber.updateQueue = (componentUpdateQueue: any);
+
+    // effect形成自循环链表
+    // 将新创建的effect hook挂载到 currentlyRenderingFiber.updateQueue.lastEffect 上
     componentUpdateQueue.lastEffect = effect.next = effect;
   } else {
+    // 若updateQueue不为空
     const lastEffect = componentUpdateQueue.lastEffect;
+
+    // question: 不明白，在上面第一次创建时，lastEffect就应该挂载第1个effect了呀？这里为什么还会为空呢？
     if (lastEffect === null) {
       componentUpdateQueue.lastEffect = effect.next = effect;
     } else {
+      // 经典的单向循环链表，lastEffect指向到最后插入的那个节点
       const firstEffect = lastEffect.next;
       lastEffect.next = effect;
       effect.next = firstEffect;
@@ -1727,6 +1739,13 @@ function updateRef<T>(initialValue: T): {|current: T|} {
   return hook.memoizedState;
 }
 
+/**
+ * 创建一个effect的hook
+ * @param fiberFlags fiber的优先级
+ * @param hookFlags hook的优先级
+ * @param create effect要执行的函数
+ * @param deps 依赖项，是个数组
+ */
 function mountEffectImpl(fiberFlags, hookFlags, create, deps): void {
   const hook = mountWorkInProgressHook();
   const nextDeps = deps === undefined ? null : deps;
@@ -1739,25 +1758,41 @@ function mountEffectImpl(fiberFlags, hookFlags, create, deps): void {
   );
 }
 
+/**
+ * 更新effect里的函数
+ * @param fiberFlags
+ * @param hookFlags
+ * @param create
+ * @param deps
+ */
 function updateEffectImpl(fiberFlags, hookFlags, create, deps): void {
-  const hook = updateWorkInProgressHook();
+  const hook = updateWorkInProgressHook(); // 获取当前的hook
   const nextDeps = deps === undefined ? null : deps;
   let destroy = undefined;
 
   if (currentHook !== null) {
-    const prevEffect = currentHook.memoizedState;
-    destroy = prevEffect.destroy;
+    const prevEffect = currentHook.memoizedState; // 当前正在使用的hook
+    destroy = prevEffect.destroy; //
     if (nextDeps !== null) {
       const prevDeps = prevEffect.deps;
+
+      // 判断依赖项是否发生变化
       if (areHookInputsEqual(nextDeps, prevDeps)) {
+        // 若依赖项没有变化
         hook.memoizedState = pushEffect(hookFlags, create, destroy, nextDeps);
         return;
       }
     }
+    // 若nextDeps为null，则每次都执行
   }
 
   currentlyRenderingFiber.flags |= fiberFlags;
 
+  /**
+   * 无论deps是否有变化，最终都会执行到pushEffect()
+   * 只是hookFlags和destroy不一样
+   * @type {Effect}
+   */
   hook.memoizedState = pushEffect(
     HookHasEffect | hookFlags,
     create,
