@@ -1975,13 +1975,25 @@ function mountDebugValue<T>(value: T, formatterFn: ?(value: T) => mixed): void {
 
 const updateDebugValue = mountDebugValue;
 
+/**
+ * useCallback的创建
+ * @param callback
+ * @param deps
+ * @returns {T}
+ */
 function mountCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
   const hook = mountWorkInProgressHook();
   const nextDeps = deps === undefined ? null : deps;
-  hook.memoizedState = [callback, nextDeps];
+  hook.memoizedState = [callback, nextDeps]; // 直接将callback和依赖项进行存储
   return callback;
 }
 
+/**
+ * useCallback的更新
+ * @param callback
+ * @param deps
+ * @returns {T|*}
+ */
 function updateCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
   const hook = updateWorkInProgressHook();
   const nextDeps = deps === undefined ? null : deps;
@@ -1990,25 +2002,39 @@ function updateCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
     if (nextDeps !== null) {
       const prevDeps: Array<mixed> | null = prevState[1];
       if (areHookInputsEqual(nextDeps, prevDeps)) {
+        // 若依赖项没有变化，则返回之前存储的callback
         return prevState[0];
       }
     }
   }
+  // 若依赖项有变化，或者没有依赖项，则重新存储callback和依赖项
   hook.memoizedState = [callback, nextDeps];
   return callback;
 }
 
+/**
+ * useMemo的创建
+ * @param nextCreate
+ * @param deps 依赖项
+ * @returns {T}
+ */
 function mountMemo<T>(
   nextCreate: () => T,
   deps: Array<mixed> | void | null,
 ): T {
   const hook = mountWorkInProgressHook();
   const nextDeps = deps === undefined ? null : deps;
-  const nextValue = nextCreate();
-  hook.memoizedState = [nextValue, nextDeps];
+  const nextValue = nextCreate(); // 计算useMemo里callback的返回值
+  hook.memoizedState = [nextValue, nextDeps]; // 将返回值和依赖项进行存储
   return nextValue;
 }
 
+/**
+ * useMemo的更新
+ * @param nextCreate
+ * @param deps
+ * @returns {T|*}
+ */
 function updateMemo<T>(
   nextCreate: () => T,
   deps: Array<mixed> | void | null,
@@ -2021,10 +2047,12 @@ function updateMemo<T>(
     if (nextDeps !== null) {
       const prevDeps: Array<mixed> | null = prevState[1];
       if (areHookInputsEqual(nextDeps, prevDeps)) {
+        // 若依赖项没有变化，则返回之前得到的结果
         return prevState[0];
       }
     }
   }
+  // 重新计算callback的结果，并进行存储
   const nextValue = nextCreate();
   hook.memoizedState = [nextValue, nextDeps];
   return nextValue;
