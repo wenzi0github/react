@@ -1778,7 +1778,7 @@ function updateEffectImpl(fiberFlags, hookFlags, create, deps): void {
 
       // 判断依赖项是否发生变化
       if (areHookInputsEqual(nextDeps, prevDeps)) {
-        // 若依赖项没有变化
+        // 若依赖项没有变化，则将上次的destroy传给pushEffect
         hook.memoizedState = pushEffect(hookFlags, create, destroy, nextDeps);
         return;
       }
@@ -1791,6 +1791,7 @@ function updateEffectImpl(fiberFlags, hookFlags, create, deps): void {
   /**
    * 无论deps是否有变化，最终都会执行到pushEffect()
    * 只是hookFlags和destroy不一样
+   * 若需要执行时，则将destroy=undefined传给pushEffect
    * @type {Effect}
    */
   hook.memoizedState = pushEffect(

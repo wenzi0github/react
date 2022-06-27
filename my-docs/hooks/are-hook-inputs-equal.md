@@ -48,4 +48,58 @@ Object.is的官方地址： [Object.is](https://developer.mozilla.org/en-US/docs
 * Object.is() 与 == 不同。`==`无法区分falsly值（假值），即如空字符串、false，数字0，undefined, null 等，均会判定为true，而Object.is则不会强制转换两边的值。
 * Object.is() 与 === 也不相同。差别是它们对待有符号的零和 NaN 不同，例如，=== 运算符（也包括 == 运算符）将数字 -0 和 +0 视为相等，而将 Number.NaN 与 NaN 视为不相等。
 
+我们再看下调试代码里说了什么：
 
+```javascript
+function areHookInputsEqual(
+  nextDeps: Array<mixed>,
+  prevDeps: Array<mixed> | null,
+) {
+  if (__DEV__) {
+    if (ignorePreviousDependencies) {
+      // Only true when this component is being hot reloaded.
+      // 在 renderWithHooks() 中：
+      // Used for hot reloading:
+      // ignorePreviousDependencies = current !== null && current.type !== workInProgress.type;
+      // 若current的fiber节点与workInProgress的fiber节点不一样，则将ignorePreviousDependencies设置为true
+      // 表示需要忽略之前的依赖项
+      // 然后这里直接返回false，表示前后的依赖项不相同
+      return false;
+    }
+  }
+
+  // 能执行到这里，说明nextDeps不为空（若为空时就已经直接执行了）
+  // 但若prevDeps为空，则给出警告，
+  // 当前hook 在此渲染期间收到了最后一个参数，但在前一次渲染期间没有收到。 即使最后一个参数是可选的，它的类型也不能在渲染之间改变。
+  if (prevDeps === null) {
+    if (__DEV__) {
+      console.error(
+        '%s received a final argument during this render, but not during ' +
+        'the previous render. Even though the final argument is optional, ' +
+        'its type cannot change between renders.',
+        currentHookNameInDev,
+      );
+    }
+    return false;
+  }
+
+  if (__DEV__) {
+    // Don't bother comparing lengths in prod because these arrays should be
+    // passed inline.
+    // 若nextDeps和prevDeps都不为空，但两者的数组长度不一样，则给出警告
+    if (nextDeps.length !== prevDeps.length) {
+      console.error(
+        'The final argument passed to %s changed size between renders. The ' +
+        'order and size of this array must remain constant.\n\n' +
+        'Previous: %s\n' +
+        'Incoming: %s',
+        currentHookNameInDev,
+        `[${prevDeps.join(', ')}]`,
+        `[${nextDeps.join(', ')}]`,
+      );
+    }
+  }
+  // 上面的校验都通过后，则开始比较每一项是否发生了变化
+  // for-Object.is
+}
+```
