@@ -267,7 +267,7 @@ function resolveLazy(lazyType) {
  * 是否需要做 DOM 操作，需要的话就会在当前 Fiber 节点中打上 EffectTag ，即“追踪”副作用；
  * 而也仅有在 update 的时候，才需要“追踪副作用”，即把 current 这个 Fiber 节点与本次更新组件
  * 状态后的 ReactElement 做对比(diff)，然后得出本次更新的 Fiber 节点，以及在该节点上打上 diff 的结果 —— EffectTag
- * @param shouldTrackSideEffects
+ * @param {boolean} shouldTrackSideEffects
  * @returns {(function(Fiber, (Fiber|null), *, Lanes): (Fiber|null))|*}
  * @constructor
  */
@@ -1271,16 +1271,21 @@ function ChildReconciler(shouldTrackSideEffects) {
     // Handle top level unkeyed fragments as if they were arrays.
     // This leads to an ambiguity between <>{[...]}</> and <>...</>.
     // We treat the ambiguous cases above the same.
+
+    // 是否是顶层的没有key的fragment组件
     const isUnkeyedTopLevelFragment =
       typeof newChild === 'object' &&
       newChild !== null &&
       newChild.type === REACT_FRAGMENT_TYPE &&
       newChild.key === null;
+
+    // 若是顶层的fragment组件，则使用其children
     if (isUnkeyedTopLevelFragment) {
       newChild = newChild.props.children;
     }
 
     // Handle object types
+    // 判断该节点的类型
     if (typeof newChild === 'object' && newChild !== null) {
       switch (newChild.$$typeof) {
         case REACT_ELEMENT_TYPE:

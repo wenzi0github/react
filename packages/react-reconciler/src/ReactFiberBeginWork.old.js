@@ -280,6 +280,15 @@ if (__DEV__) {
   didWarnAboutDefaultPropsOnFunctionComponent = {};
 }
 
+/**
+ * 调和，创建或更新fiber树
+ * 若current为null，说明当前没有正在展示的树，说明应当执行初始化，调用 mountChildFibers
+ * 若current不为空，说明要得到一棵新的fiber树，执行 reconcileChildFibers() 方法
+ * @param current
+ * @param workInProgress
+ * @param nextChildren
+ * @param renderLanes
+ */
 export function reconcileChildren(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -946,6 +955,15 @@ function markRef(current: Fiber | null, workInProgress: Fiber) {
   }
 }
 
+/**
+ * 更新或创建Function类型的组件
+ * @param current
+ * @param workInProgress
+ * @param Component 当前的function组件函数，用来进行`Component()`方式的调用
+ * @param nextProps
+ * @param renderLanes
+ * @returns {Fiber|*}
+ */
 function updateFunctionComponent(
   current,
   workInProgress,
@@ -1028,6 +1046,10 @@ function updateFunctionComponent(
     markComponentRenderStopped();
   }
 
+  /**
+   * 若current不为空，且 didReceiveUpdate 为false时，
+   * 执行 bailoutHooks
+   */
   if (current !== null && !didReceiveUpdate) {
     bailoutHooks(current, workInProgress, renderLanes);
     return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
