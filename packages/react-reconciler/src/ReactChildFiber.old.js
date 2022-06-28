@@ -272,20 +272,36 @@ function resolveLazy(lazyType) {
  * @constructor
  */
 function ChildReconciler(shouldTrackSideEffects) {
+  /**
+   * 将returnFiber子元素中，需要删除的fiber节点放到deletions的副作用数组中
+   * 在更新时，将该数组中的fiber节点进行删除
+   * @param returnFiber
+   * @param childToDelete
+   */
   function deleteChild(returnFiber: Fiber, childToDelete: Fiber): void {
     if (!shouldTrackSideEffects) {
       // Noop.
+      // 初始化fiber节点时，直接返回，不进行任何操作
       return;
     }
     const deletions = returnFiber.deletions;
     if (deletions === null) {
+      // 若副作用数组为空，则创建一个
       returnFiber.deletions = [childToDelete];
       returnFiber.flags |= ChildDeletion;
     } else {
+      // 否则直接推入
       deletions.push(childToDelete);
     }
   }
 
+  /**
+   * 删除returnFiber的子元素中，currentFirstChild和其兄弟元素
+   * 即把currentFirstChild的兄弟元素放到returnFiber的deletions的副作用数组中，等待删除
+   * @param returnFiber
+   * @param currentFirstChild
+   * @returns {null}
+   */
   function deleteRemainingChildren(
     returnFiber: Fiber,
     currentFirstChild: Fiber | null,
@@ -1135,6 +1151,14 @@ function ChildReconciler(shouldTrackSideEffects) {
     return created;
   }
 
+  /**
+   * 单个普通ReactElement的构建
+   * @param returnFiber
+   * @param currentFirstChild
+   * @param element
+   * @param lanes
+   * @returns {Fiber}
+   */
   function reconcileSingleElement(
     returnFiber: Fiber,
     currentFirstChild: Fiber | null,
@@ -1146,17 +1170,27 @@ function ChildReconciler(shouldTrackSideEffects) {
 
     // child: 现在正在使用的child
     let child = currentFirstChild;
+
+    // 新节点是单个节点，但无法保证之前的节点也是单个节点，
+    // 这里用循环查找第一个 key和节点类型都一样的节点，进行复用
     while (child !== null) {
       // TODO: If key === null and child.key === null, then this only applies to
       // the first item in the list.
       // 比较key值是否有变化，这是复用Fiber节点的先决条件
+      // 若找到key一样的节点，即使都为null，那也是节点一样
+      // 注意key为null我们也认为是相等，因为单个节点没有key也是正常的
       if (child.key === key) {
         const elementType = element.type;
         if (elementType === REACT_FRAGMENT_TYPE) {
           if (child.tag === Fragment) {
-            deleteRemainingChildren(returnFiber, child.sibling);
-            const existing = useFiber(child, element.props.children);
-            existing.return = returnFiber;
+            deleteRemainingChildren(returnFiber, child.sibling); // 已找到可复用Fiber子节点且确认只有一个子节点，因此标记删除掉该child节点的所有sibling节点
+            /**
+             * useFiber是将当前可以复用的节点和属性传入，然后复制合并到workInProgress上
+             * @type {Fiber}
+             */
+            const existing = useFiber(child, element.props.children); // 该节点是fragment类型，则复用其children
+            existing.return = returnFiber; // 重置新Fiber节点的return指针，指向当前Fiber节点
+            // 多说一句，fragment类型的fiber没有ref属性，这里不用处理
             if (__DEV__) {
               existing._debugSource = element._source;
               existing._debugOwner = element._owner;
@@ -1180,7 +1214,7 @@ function ChildReconciler(shouldTrackSideEffects) {
               resolveLazy(elementType) === child.type)
           ) {
             deleteRemainingChildren(returnFiber, child.sibling); // 已找到可复用Fiber子节点且确认只有一个子节点，因此标记删除掉该child节点的所有sibling节点
-            const existing = useFiber(child, element.props); // 复用child节点
+            const existing = useFiber(child, element.props); // 复用child节点和element.props属性
             existing.ref = coerceRef(returnFiber, child, element); // 处理ref
             existing.return = returnFiber; // 重置新Fiber节点的return指针，指向当前Fiber节点
             if (__DEV__) {
@@ -1191,16 +1225,23 @@ function ChildReconciler(shouldTrackSideEffects) {
           }
         }
         // Didn't match.
+        // 若节点类型没有匹配上，则直接删除该节点和其兄弟节点，停止循环，
+        // 开始走下面的创建新fiber节点的逻辑
         deleteRemainingChildren(returnFiber, child);
         break;
       } else {
         // 若key不一样，不能复用，标记删除
         deleteChild(returnFiber, child);
       }
-      child = child.sibling; // 指针指向下一个sibling节点，尝试进行复用
+      child = child.sibling; // 指针指向下一个sibling节点
     }
 
+    // 上面的一通循环没找到可以复用的节点，则接下来直接创建一个新的fiber节点
+
     if (element.type === REACT_FRAGMENT_TYPE) {
+      // 若新节点的类型是 REACT_FRAGMENT_TYPE，则调用 createFiberFromFragment() 方法创建fiber节点
+      // createFiberFromFragment()也是调用的createFiber()，第1个参数指定fragment类型
+      // 然后再调用 new FiberNode() 创建一个fiber节点实例
       const created = createFiberFromFragment(
         element.props.children,
         returnFiber.mode,
@@ -1210,6 +1251,10 @@ function ChildReconciler(shouldTrackSideEffects) {
       created.return = returnFiber;
       return created;
     } else {
+      // 若新节点是其他类型，则会调用 createFiberFromElement()
+      // 这里面再接着调用 createFiberFromTypeAndProps()，然后判断element的type是哪种类型
+      // 然后再调用对应的create方法创建fiber节点
+
       const created = createFiberFromElement(element, returnFiber.mode, lanes);
       created.ref = coerceRef(returnFiber, currentFirstChild, element);
       created.return = returnFiber;
@@ -1289,6 +1334,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     if (typeof newChild === 'object' && newChild !== null) {
       switch (newChild.$$typeof) {
         case REACT_ELEMENT_TYPE:
+          // 一般的react组件
           return placeSingleChild(
             reconcileSingleElement(
               returnFiber,
@@ -1319,6 +1365,7 @@ function ChildReconciler(shouldTrackSideEffects) {
       }
 
       if (isArray(newChild)) {
+        // 若 newChild 是个数组
         return reconcileChildrenArray(
           returnFiber,
           currentFirstChild,

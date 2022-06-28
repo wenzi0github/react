@@ -482,8 +482,9 @@ export function createFiberFromTypeAndProps(
   mode: TypeOfMode,
   lanes: Lanes,
 ): Fiber {
-  let fiberTag = IndeterminateComponent;
+  let fiberTag = IndeterminateComponent; // 我们还不知道当前fiber是什么类型
   // The resolved type is set if we know what the final type will be. I.e. it's not lazy.
+  // 如果我们知道最终类型type将是什么，则设置解析的类型。
   let resolvedType = type;
   if (typeof type === 'function') {
     if (shouldConstruct(type)) {
