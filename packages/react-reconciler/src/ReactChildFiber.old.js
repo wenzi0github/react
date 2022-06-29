@@ -397,6 +397,16 @@ function ChildReconciler(shouldTrackSideEffects) {
     return newFiber;
   }
 
+  /**
+   * 更新文本节点
+   * 若当前current fiber为空，或者不是文本节点，则新创建一个文本节点
+   * 若当前是文本节点，则更新其内容
+   * @param returnFiber
+   * @param current
+   * @param textContent
+   * @param lanes
+   * @returns {Fiber}
+   */
   function updateTextNode(
     returnFiber: Fiber,
     current: Fiber | null,
@@ -605,6 +615,18 @@ function ChildReconciler(shouldTrackSideEffects) {
     return null;
   }
 
+  /**
+   * 创建或更新newChild为fiber节点
+   * 若oldFiber不为空，且newChild与oldFiber的类型能对得上，则复用旧fiber节点
+   * 否则，创建一个新的fiber节点
+   * 该updateSlot方法与createChild方法很像，但createChild只有创建新fiber节点的功能
+   * 而该updateSlot()方法则可以根据oldFiber，来决定是复用之前的fiber节点，还是新创建节点
+   * @param returnFiber
+   * @param oldFiber
+   * @param newChild
+   * @param lanes
+   * @returns {Fiber|null}
+   */
   function updateSlot(
     returnFiber: Fiber,
     oldFiber: Fiber | null,
@@ -656,6 +678,7 @@ function ChildReconciler(shouldTrackSideEffects) {
           return null;
         }
 
+        // 若 newChild 是数组或者迭代类型，则更新为fragment类型
         return updateFragment(returnFiber, oldFiber, newChild, lanes, null);
       }
 
@@ -802,6 +825,8 @@ function ChildReconciler(shouldTrackSideEffects) {
     // don't have backpointers on fibers. I'm trying to see how far we can get
     // with that model. If it ends up not being worth the tradeoffs, we can
     // add it later.
+    // 该算法无法通过两端搜索进行优化，因为我们在光纤上没有反向指针。
+    // 我想看看我们能用那个模型走多远。如果最终不值得权衡，我们可以稍后再添加。
 
     // Even with a two ended optimization, we'd want to optimize for the case
     // where there are few changes and brute force the comparison instead of
@@ -835,9 +860,13 @@ function ChildReconciler(shouldTrackSideEffects) {
     let nextOldFiber = null;
     for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
       if (oldFiber.index > newIdx) {
+        // 尝试理解：若旧节点的索引比新节点的索引大，
+        // 则nextOldFiber指向到oldFiber，
+        // 同时oldFiber设置null，下次循环时直接结束
         nextOldFiber = oldFiber;
         oldFiber = null;
       } else {
+        // 获取oldFiber的下一个兄弟节点
         nextOldFiber = oldFiber.sibling;
       }
       const newFiber = updateSlot(
@@ -860,6 +889,7 @@ function ChildReconciler(shouldTrackSideEffects) {
         if (oldFiber && newFiber.alternate === null) {
           // We matched the slot, but we didn't reuse the existing fiber, so we
           // need to delete the existing child.
+          // 若旧fiber节点存在，但新节点并没有复用该节点，则将该旧节点删除
           deleteChild(returnFiber, oldFiber);
         }
       }
