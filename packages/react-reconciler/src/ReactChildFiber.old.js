@@ -321,6 +321,13 @@ function ChildReconciler(shouldTrackSideEffects) {
     return null;
   }
 
+  /**
+   * 将currentFirstChild和所有的兄弟节点放到map中，方便查找
+   * 若该fiber节点有key，则使用该key作为map的key；否则使用隐性的index作为map的key
+   * @param returnFiber
+   * @param currentFirstChild
+   * @returns {Map<string|number, Fiber>}
+   */
   function mapRemainingChildren(
     returnFiber: Fiber,
     currentFirstChild: Fiber,
@@ -508,6 +515,13 @@ function ChildReconciler(shouldTrackSideEffects) {
     }
   }
 
+  /**
+   * 将单个不知类型的虚拟dom创建为fiber节点
+   * @param {Fiber} returnFiber 父级节点
+   * @param {any} newChild 当前虚拟dom
+   * @param {Lanes} lanes 优先级
+   * @returns {Fiber|null}
+   */
   function createChild(
     returnFiber: Fiber,
     newChild: any,
@@ -520,6 +534,7 @@ function ChildReconciler(shouldTrackSideEffects) {
       // Text nodes don't have keys. If the previous node is implicitly keyed
       // we can continue to replace it without aborting even if it is not a text
       // node.
+      // 纯文本节点没有key，即使上一个节点有key，我们也可以继续替换
       const created = createFiberFromText(
         '' + newChild,
         returnFiber.mode,
@@ -530,8 +545,10 @@ function ChildReconciler(shouldTrackSideEffects) {
     }
 
     if (typeof newChild === 'object' && newChild !== null) {
+      // 若newChild是一个object类型，则判断他的ReactElement类型
       switch (newChild.$$typeof) {
         case REACT_ELEMENT_TYPE: {
+          // 普通的react格式组件
           const created = createFiberFromElement(
             newChild,
             returnFiber.mode,
@@ -542,6 +559,7 @@ function ChildReconciler(shouldTrackSideEffects) {
           return created;
         }
         case REACT_PORTAL_TYPE: {
+          // portal组件
           const created = createFiberFromPortal(
             newChild,
             returnFiber.mode,
@@ -551,12 +569,15 @@ function ChildReconciler(shouldTrackSideEffects) {
           return created;
         }
         case REACT_LAZY_TYPE: {
+          // 懒加载组件，则执行挂载在 newChild 上的_init，
+          // 递归调用createChild
           const payload = newChild._payload;
           const init = newChild._init;
           return createChild(returnFiber, init(payload), lanes);
         }
       }
 
+      // 若newChild是数组，则创建为fragment类型的组件
       if (isArray(newChild) || getIteratorFn(newChild)) {
         const created = createFiberFromFragment(
           newChild,
@@ -568,15 +589,19 @@ function ChildReconciler(shouldTrackSideEffects) {
         return created;
       }
 
+      // 没有对应的格式，则提出警告
       throwOnInvalidObjectType(returnFiber, newChild);
     }
 
     if (__DEV__) {
       if (typeof newChild === 'function') {
+        // function类型的，不能直接作为React组件，需要将其改为 <Component />，
+        // 或者想直接执行它，使用他的返回结果
         warnOnFunctionType(returnFiber);
       }
     }
 
+    // 这是一个空节点
     return null;
   }
 
@@ -758,6 +783,15 @@ function ChildReconciler(shouldTrackSideEffects) {
     return knownKeys;
   }
 
+  /**
+   * 虚拟dom是一个数组
+   * https://www.cnblogs.com/echolun/p/16414562.html
+   * @param {Fiber} returnFiber 当前节点的父级节点
+   * @param {Fiber|null} currentFirstChild 当前正在使用的节点
+   * @param {Array<*>} newChildren 新的虚拟dom节点，
+   * @param {Lanes} lanes 优先级
+   * @returns {Fiber} 新虚拟dom节点构建好的第1个fiber节点（这里是一个链表，但只需要返回头部节点即可）
+   */
   function reconcileChildrenArray(
     returnFiber: Fiber,
     currentFirstChild: Fiber | null,
@@ -792,7 +826,7 @@ function ChildReconciler(shouldTrackSideEffects) {
       }
     }
 
-    let resultingFirstChild: Fiber | null = null;
+    let resultingFirstChild: Fiber | null = null; // 新构建出来的fiber链表的第1个节点
     let previousNewFiber: Fiber | null = null;
 
     let oldFiber = currentFirstChild;
@@ -857,14 +891,18 @@ function ChildReconciler(shouldTrackSideEffects) {
     if (oldFiber === null) {
       // If we don't have any more existing children we can choose a fast path
       // since the rest will all be insertions.
+      // 若没有旧的节点，这里直接进行创建，并返回这个队列的第1个fiber节点
       for (; newIdx < newChildren.length; newIdx++) {
         const newFiber = createChild(returnFiber, newChildren[newIdx], lanes);
         if (newFiber === null) {
           continue;
         }
         lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+
+        // 形成单向链表
         if (previousNewFiber === null) {
           // TODO: Move out of the loop. This only happens for the first run.
+          // 记录起始的第1个节点
           resultingFirstChild = newFiber;
         } else {
           previousNewFiber.sibling = newFiber;
@@ -878,11 +916,13 @@ function ChildReconciler(shouldTrackSideEffects) {
       return resultingFirstChild;
     }
 
+    // 若当前fiber节点不为空，则把当前所有的节点放到一个临时的map结构中，方便快速查找
     // Add all children to a key map for quick lookups.
     const existingChildren = mapRemainingChildren(returnFiber, oldFiber);
 
     // Keep scanning and use the map to restore deleted items as moves.
     for (; newIdx < newChildren.length; newIdx++) {
+      // 复用map中存储的旧fiber节点（如果可以复用的话）
       const newFiber = updateFromMap(
         existingChildren,
         returnFiber,
@@ -892,11 +932,14 @@ function ChildReconciler(shouldTrackSideEffects) {
       );
       if (newFiber !== null) {
         if (shouldTrackSideEffects) {
+          // 若需要记录副作用
           if (newFiber.alternate !== null) {
             // The new fiber is a work in progress, but if there exists a
             // current, that means that we reused the fiber. We need to delete
             // it from the child list so that we don't add it to the deletion
             // list.
+            // newFiber.alternate指向到current，若current不为空，说明我复用了该fiber节点，
+            // 这里我们要在map中删除，避免后续添加到deletion的副作用队列中
             existingChildren.delete(
               newFiber.key === null ? newIdx : newFiber.key,
             );
@@ -915,6 +958,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     if (shouldTrackSideEffects) {
       // Any existing children that weren't consumed above were deleted. We need
       // to add them to the deletion list.
+      // 将任何没有复用的fiber节点添加到删除的副作用队列中
       existingChildren.forEach(child => deleteChild(returnFiber, child));
     }
 
@@ -1308,6 +1352,13 @@ function ChildReconciler(shouldTrackSideEffects) {
     newChild: any, // 子节点(ReactElement)
     lanes: Lanes, // 优先级相关
   ): Fiber | null {
+    /**
+     * 翻译下面的注释：
+     * 当前函数不是递归函数。
+     * 若顶层结构是一个数组，我们将其作为一组的数据进行处理，而不是一个fragment。
+     * 另一方面，嵌套的数组将被视为fragment节点。
+     * 递归行为会发生在正常流中（应该是在 workLoopSync->performUnitOfWork中，这里会循环完成所有的虚拟dom节点）
+     */
     // This function is not recursive. // 该函数不是递归函数
     // If the top level item is an array, we treat it as a set of children,
     // not as a fragment. Nested arrays on the other hand will be treated as

@@ -2,13 +2,16 @@
 
 从React17开始，
 
-```shell
-# ReactFiberBeginWork.old.js
-beginWork -> updateFunctionComponent -> {
-  nextChildren = renderWithHooks(), # 根据current和current.memoizedState判断当前是初始化，还是更新
-  reconcileChildren, # 调和？
-}
+```mermaid
+graph LR;
+  beginWork --> updateFunctionComponent
+  updateFunctionComponent --> renderWithHooks
+  updateFunctionComponent --> reconcileChildren
 ```
+
+在 upateFunctionComponent() 中最主要会执行两个方法 renderWithHooks() 和 reconcileChildren()。 renderWithHooks() 里会根据 current 和 current.memoizedState 判断当前是初始化，还是更新。
+
+这里我们主要讲 reconcileChildren() 。
 
 这里会执行到 reconcileChildren() 方法，然后根据current是否为null，来决定是初始化fiber树，还是更新fiber树，即要执行mountChildFibers()还是 reconcileChildFibers()。
 
@@ -37,7 +40,7 @@ reconcileChildFibers最终的返回是当前节点的第一个孩子节点，会
 
 ## 单个普通的ReactElement
 
-若newChild是普通的ReactElement，则调用reconcileSingleElement()。我们看下这个函数里是如何操作的。
+若newChild是普通的ReactElement，则调用 reconcileSingleElement()。我们看下这个函数里是如何操作的。
 
 根据将要构建的元素的key和节点类型，这里用循环查找第一个 key和节点类型都一样的节点，进行复用。若找到了则复用该节点，同时删除该节点的兄弟节点（和该兄弟节点的所有兄弟节点）；若没找到，则删除当前节点和兄弟节点，新创建一个。（其实这里并没有直接删除，而是把将要删除的元素放到了returnFiber的deletions副作用节点上，在下次渲染之前才进行删除）
 
@@ -45,6 +48,22 @@ reconcileChildFibers最终的返回是当前节点的第一个孩子节点，会
 > 新节点是单个节点，但无法保证之前的节点也是单个节点。
 
 这里也有不少的判断逻辑：
+
+```mermaid
+graph LR;
+  reconcileSingleElement --> while
+  while --> key{match key}
+  key --> type{match type}
+  key --> del[del current child]
+  type --> isFragment{is fragment}
+  isFragment --> fragment
+  isFragment --> elementtype
+  type --> notMatchType[not match type, <br/> del cur child and it's siblings]
+  reconcileSingleElement --> create[create fiber node]
+  create --> isCreateFragment{is fragment element}
+  isCreateFragment --> createFiberFromFragment
+  isCreateFragment --> createFiberFromElement
+```
 
 ```shell
 while
