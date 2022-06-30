@@ -155,7 +155,7 @@ function FiberRootNode(
  * @param {*} hydrate
  * @param {*} hydrationCallbacks
  * @param {*} isStrictMode
- * @param {*} concurrentUpdatesByDefaultOverride
+ * @param {*} concurcreateFiberRootrentUpdatesByDefaultOverride
  */
 export function createFiberRoot(
   containerInfo: any,
@@ -245,6 +245,7 @@ export function createFiberRoot(
   }
 
   /**
+   * 给传入的fiber节点创建一个updateQueue属性
    * uninitializedFiber.updateQueue = {
    *  baseState: uninitializedFiber.memoizedState
    * };
