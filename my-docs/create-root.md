@@ -43,10 +43,10 @@ root.render(<App />);
 稍微复杂点的，就是多了一些判断逻辑和提示，如：
 
 1. 判断传入的dom是否是一个有效的挂载节点，如传入的是一个文本节点就不能挂载；
-2. 若传入的dom节点已经使用了（已经作为React的挂载节点了），给出警告；
+2. 若传入的dom节点已经使用了（即已经作为React的挂载节点了），给出警告；
 3. 挂载事件到某dom元素上时，判断传入的dom元素是否是注释类型的元素，若不是则直接使用，否则使用他的父级元素；
 
-上面一系列的判断完成后，就会执行下面的方法，返回一个实例：
+上面一系列的判断完成后，就会执行下面的方法，返回ReactDOMRoot的一个实例：
 
 ```javascript
 return new ReactDOMRoot(FiberRootNode);
@@ -56,4 +56,21 @@ return new ReactDOMRoot(FiberRootNode);
 
 ## render
 
-render()方法传进来的，是jsx已经被babel转换好的虚拟dom。从React17.0开始，jsx的转换任务则交给了babel来处理
+render()方法传进来的，是jsx已经被转换好的虚拟dom（即如 <App />）。在React16.x版本及之前，都是React内置的模块来将jsx转成虚拟DOM的，因此即使没有React中任何相关的特性，也得要显式地引入React；而从React17.0开始，jsx的转换任务则交给了babel来处理，这时就不用再刻意地引用了；当然，如果需要用到React里的一些特性，还是要引入的。
+
+官方文档：[介绍全新的 JSX 转换](https://zh-hans.reactjs.org/blog/2020/09/22/introducing-the-new-jsx-transform.html)
+
+render()的作用就是将jsx转为一棵完整的fiber树。
+
+```jsx
+root.render(<App />);
+```
+
+这里会先进行一系列的判断，若有一些使用不当的地方，提前给出警告，如：
+
+1. FiberRootNode类型的fiber节点，我们在上面说过可以理解为整个fiber树的起始节点，若该节点为null，说明整个fiber树已被卸载；
+2. render()方法现在只能传入一个参数，即如<App />的虚拟DOM树，并没有第2个参数；若用户可能出于之前的使用习惯，会给第2个参数传入callback或dom节点等，这里给出错误提示；
+
+正常执行时，就会调用 updateContainer() 方法了。这里的updateContainer分了两个方法：updateContainer_old 和 updateContainer_new。在目前18.0.2版本里，使用的是 updateContainer_old() 方法。
+
+
