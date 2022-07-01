@@ -73,4 +73,8 @@ root.render(<App />);
 
 正常执行时，就会调用 updateContainer() 方法了。这里的updateContainer分了两个方法：updateContainer_old 和 updateContainer_new。在目前18.0.2版本里，使用的是 updateContainer_old() 方法。
 
+updateContainer_old() 方法在 packages/react-reconciler/src/ReactFiberReconciler.old.js 的文件中。
+
+
+
 

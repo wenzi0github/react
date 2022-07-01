@@ -241,7 +241,7 @@ export function createRoot(
   }
 
   /**
-   * 创建一个FiberRootNode类型的节点，fiberRootNode 是整个应用的根节点
+   * 创建一个 FiberRootNode 类型的节点，fiberRootNode 是整个应用的根节点
    * 在react的更新过程中，会有current(当前正在展示)和workInProgress(将要更新的)两个fiber树，
    * fiberRootNode 默认指向到current,
    * workInProgress更新并commit完毕后，fiberRootNode会指向到workProgress

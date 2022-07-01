@@ -574,6 +574,7 @@ export function scheduleUpdateOnFiber(
   } else {
     // This is a normal update, scheduled from outside the render phase. For
     // example, during an input event.
+    // 这是一个正常的更新，从渲染阶段之外安排。 例如，在输入事件期间
     if (enableUpdaterTracking) {
       if (isDevToolsPresent) {
         addFiberToLanesMap(root, fiber, lane);
@@ -1544,6 +1545,9 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
     }
   }
   workInProgressRoot = root;
+
+  // 获取到current树的对应面alternate，即workInProgress，若存在则使用，若不存在则创建
+  // 在render()第一次调用时，root.current.alternate 肯定为空，这里面则会调用createFiber进行创建
   const rootWorkInProgress = createWorkInProgress(root.current, null);
   workInProgress = rootWorkInProgress;
   workInProgressRootRenderLanes = subtreeRenderLanes = workInProgressRootIncludedLanes = lanes;

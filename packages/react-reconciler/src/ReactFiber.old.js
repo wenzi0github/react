@@ -265,6 +265,12 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
     // node that we're free to reuse. This is lazily created to avoid allocating
     // extra objects for things that are never updated. It also allow us to
     // reclaim the extra memory if needed.
+    /**
+     * 翻译：我们使用双缓冲池技术，因为我们知道我们最多只需要两个版本的树。
+     * 我们可以汇集其他未使用的节点，进行自由的重用。
+     * 这是惰性创建的，以避免为从不更新的对象分配额外的对象。
+     * 它还允许我们在需要时回收额外的内存
+     */
     workInProgress = createFiber(
       current.tag,
       pendingProps,
@@ -283,6 +289,7 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
       workInProgress._debugHookTypes = current._debugHookTypes;
     }
 
+    // workInProgress 和 current通过 alternate 属性互相进行指向
     workInProgress.alternate = current;
     current.alternate = workInProgress;
   } else {

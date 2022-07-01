@@ -141,6 +141,7 @@ function getContextForSubtree(
   parentComponent: ?React$Component<any, any>,
 ): Object {
   if (!parentComponent) {
+    // 初次调用render时，parentComponent为null
     // emptyContextObject 是 {}
     return emptyContextObject;
   }
@@ -256,7 +257,7 @@ export function createContainer(
 ): OpaqueRoot {
   const hydrate = false;
   const initialChildren = null;
-  return (
+  return createFiberRoot(
     containerInfo,
     tag,
     hydrate,
@@ -320,8 +321,8 @@ export function createHydrationContainer(
 
 /**
  *
- * @param {ReactNodeList} element fiber树
- * @param {OpaqueRoot} container
+ * @param {ReactNodeList} element 虚拟DOM树
+ * @param {OpaqueRoot} container FiberRootNode 节点
  * @param {?React$Component<any, any>} parentComponent 在React18传到这里的是null
  * @param {?Function} callback render()里的callback，不过从React18开始就没了，传入的是null
  * @returns {Lane}
@@ -341,7 +342,7 @@ export function updateContainer(
    * current:
    * const uninitializedFiber = createHostRootFiber(tag, isStrictMode, concurrentUpdatesByDefaultOverride,);
    */
-  const current = container.current;
+  const current = container.current; // FiberRootNode.current 现在指向到当前的fiber树，若是初次执行时，current树只有hostFiber节点，没有其他的
   const eventTime = requestEventTime();
   const lane = requestUpdateLane(current);
 
@@ -349,7 +350,13 @@ export function updateContainer(
     markRenderScheduled(lane);
   }
 
+  /**
+   * React18中，parentComponent为null，得到一个空的object，
+   * 即context为{}
+   */
   const context = getContextForSubtree(parentComponent);
+
+  // 初次渲染时，container中的context属性为null
   if (container.context === null) {
     container.context = context;
   } else {
@@ -396,9 +403,14 @@ export function updateContainer(
   }
 
   /**
-   * 将update添加到current的pending中
+   * 将update添加到current的更新链表中
+   * 执行后，即current.updateQueue.shared.pending = sharedQueue
+   * sharedQueue是React中经典的循环链表，头指针头像最后插入的那个update节点
    */
   enqueueUpdate(current, update, lane);
+
+  // scheduleUpdateOnFiber() -> ensureRootIsScheduled(root) -> performSyncWorkOnRoot(root)
+  // -> renderRootSync(root) -> workLoopSync()
   const root = scheduleUpdateOnFiber(current, lane, eventTime);
   if (root !== null) {
     entangleTransitions(root, current, lane);
