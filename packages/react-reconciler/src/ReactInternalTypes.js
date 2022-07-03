@@ -88,7 +88,7 @@ export type Fiber = {|
   elementType: any,
 
   // The resolved function/class/ associated with this fiber.
-  // 当前节点的类型
+  // 与该fiber节点相关的解析函数/类
   type: any,
 
   // The local state associated with this fiber.
