@@ -430,14 +430,21 @@ export function renderWithHooks<Props, SecondArg>(
         : HooksDispatcherOnUpdate;
   }
 
+  /**
+   * 执行 Function Component，得到React.createElement执行后的虚拟dom结构
+   */
   let children = Component(props, secondArg);
 
   // Check if there was a render phase update
+  // 检查是否有渲染阶段更新
   if (didScheduleRenderPhaseUpdateDuringThisPass) {
     // Keep rendering in a loop for as long as render phase updates continue to
     // be scheduled. Use a counter to prevent infinite loops.
+    // 计算重复渲染的次数，避免无限循环
     let numberOfReRenders: number = 0;
     do {
+      // 第一步就是置为 false
+      // 这个循环只执行一次
       didScheduleRenderPhaseUpdateDuringThisPass = false;
       localIdCounter = 0;
 
@@ -456,6 +463,7 @@ export function renderWithHooks<Props, SecondArg>(
       }
 
       // Start over from the beginning of the list
+      // 从列表的开头重新开始
       currentHook = null;
       workInProgressHook = null;
 
@@ -476,6 +484,7 @@ export function renderWithHooks<Props, SecondArg>(
 
   // We can assume the previous dispatcher is always this one, since we set it
   // at the beginning of the render phase and there's no re-entrance.
+  // 我们可以假设之前的调度程序总是这个，因为我们在渲染阶段开始时设置了它，并且没有重新进入。
   ReactCurrentDispatcher.current = ContextOnlyDispatcher;
 
   if (__DEV__) {
@@ -2449,6 +2458,15 @@ function dispatchSetState<S, A>(
     // 新state与现在的state不一样，开启新的调度
     // todo: scheduleUpdateOnFiber 是干嘛的？
     const eventTime = requestEventTime();
+
+    /**
+     * scheduleUpdateOnFiber()方法的执行流程如下：
+     * https://docs.qq.com/flowchart/DS0pVdnB0bmlVRkly?u=7314a95fb28d4269b44c0026faa673b7
+     * 该方法会在执行render()入口时，会执行一次scheduleUpdateOnFiber()（在updateContainer()方法里），
+     * 然后进入到其他各种执行流程，在执行到beginWork()里，会执行renderWithHooks()方法，里面会区分是mount还是update，
+     * 在执行setState时，会再次调用 scheduleUpdateOnFiber()，重新渲染这个 function component。
+     * @type {FiberRoot}
+     */
     const root = scheduleUpdateOnFiber(fiber, lane, eventTime);
     if (root !== null) {
       entangleTransitionUpdate(root, queue, lane);
@@ -2473,6 +2491,11 @@ function enqueueRenderPhaseUpdate<S, A>(
   // This is a render phase update. Stash it in a lazily-created map of
   // queue -> linked list of updates. After this render pass, we'll restart
   // and apply the stashed updates on top of the work-in-progress hook.
+  /**
+   * 这是渲染阶段更新。 将其存储在延迟创建的队列映射中 -> 更新链接列表。
+   * 在此渲染过程之后，我们将重新启动并将隐藏的更新应用到 work-in-progress 钩子之上。
+   * @type {boolean}
+   */
   didScheduleRenderPhaseUpdateDuringThisPass = didScheduleRenderPhaseUpdate = true;
   const pending = queue.pending;
   if (pending === null) {

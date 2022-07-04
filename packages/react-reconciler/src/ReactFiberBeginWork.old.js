@@ -256,6 +256,10 @@ import {
 
 const ReactCurrentOwner = ReactSharedInternals.ReactCurrentOwner;
 
+/**
+ * 确实收到更新，用来表示是否要进行更新
+ * @type {boolean}
+ */
 let didReceiveUpdate: boolean = false;
 
 let didWarnAboutBadClass;
@@ -3340,6 +3344,13 @@ function resetSuspendedCurrentOnMountInLegacyMode(current, workInProgress) {
   }
 }
 
+/**
+ * 救助已经完成的工作
+ * @param current
+ * @param workInProgress
+ * @param renderLanes
+ * @returns {Fiber|null}
+ */
 function bailoutOnAlreadyFinishedWork(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -3470,6 +3481,13 @@ function checkScheduledUpdateOrContext(
   return false;
 }
 
+/**
+ * 若没有更新，尝试提前释放
+ * @param current
+ * @param workInProgress
+ * @param renderLanes
+ * @returns {Fiber|*|null|Fiber}
+ */
 function attemptEarlyBailoutIfNoScheduledUpdate(
   current: Fiber,
   workInProgress: Fiber,
@@ -3679,6 +3697,7 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
 }
 
 /**
+ *
  * 流程图：https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/96509d9313404a0cbb8df590cb57c4a0~tplv-k3u1fbpfcp-zoom-in-crop-mark:1304:0:0:0.awebp?
  * @param current
  * @param workInProgress
@@ -3721,7 +3740,7 @@ function beginWork(
     ) {
       // If props or context changed, mark the fiber as having performed work.
       // This may be unset if the props are determined to be equal later (memo).
-      // 如果 props 或 context 发生变化，将 Fiber 标记为已执行工作
+      // 如果 props 或 context 发生变化，将 Fiber 标记为需要更新
       didReceiveUpdate = true;
     } else {
       // Neither props nor legacy context changes. Check if there's a pending
