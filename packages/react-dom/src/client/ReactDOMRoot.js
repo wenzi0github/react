@@ -96,7 +96,9 @@ function ReactDOMRoot(internalRoot: FiberRoot) {
 
 /**
  * render的入口
- * @param {ReactNodeList} children 通过createElement或babel转换后的树形结构
+ * @param {ReactNodeList} children 通过createElement或babel转换后的element结构
+ * element结构 { $$typeof, type, props, key, ref }
+ * 不过这里如null, boolean等类型，也认为是有效的children类型
  */
 ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = function(
   children: ReactNodeList,

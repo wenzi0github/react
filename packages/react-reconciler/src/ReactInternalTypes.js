@@ -91,6 +91,10 @@ export type Fiber = {|
   // 与该fiber节点相关的解析函数/类
   type: any,
 
+  /**
+   * stateNode 这个属性比较特殊，用于记录当前 Fiber 所对应的真实 DOM 节点
+   * 或者 当前虚拟组件的实例，这么做的原因第一是为了实现 Ref ，第二是为了实现 DOM 的跟踪
+   */
   // The local state associated with this fiber.
   stateNode: any,
 

@@ -133,7 +133,7 @@ function warnIfStringRefCannotBeAutoConverted(config) {
  * 翻译：工厂模式来创建React元素，这里不再是class模式，不用再使用new进行初始化。
  * 同样的，instanceof方法也不再其作用，取而代之的是判断 $$typeof 属性是否为 Symbol.for('react.element')，
  * 来判断该元素是否为React元素。
- * @param {string} type dom元素
+ * @param {*} type React组件，即Function Component或Class Component
  * @param {object} props dom元素上的属性
  * @param {string} key 该元素的标记
  * @param {string|object} ref
@@ -371,7 +371,7 @@ export function jsxDEV(type, config, maybeKey, source, self) {
  * 1. 处理config中的数据，单独提取key, ref, __self, __source属性，并复制其他属性；
  * 2. 处理子元素，默认从第3个参数开始的都是子元素，若子元素只有1个，直接赋值；若有多个则转成数组再赋值；
  * 3. 处理默认属性defaultProps，只有config中没有该属性或该属性的值为空时，才使用默认属性；
- * @param {string} type dom元素的类型，如div, span等
+ * @param {*} type React组件，即type是Function Component或Class Component，用于后续是直接执行该type方法，还是按照类来进行初始化
  * @param {?object} config 元素的属性，可以为空
  * @param {?any[]} children 子元素，可以为空
  */
@@ -440,6 +440,11 @@ export function createElement(type, config, children) {
   }
 
   // Resolve default props
+  /**
+   * 若设置了defaultProps属性且没有传入该属性，则使用默认属性
+   * 如 const App = () => (<div class="App"></div>);
+   * App.defaultProps = { name: 'aa' };
+   */
   if (type && type.defaultProps) {
     const defaultProps = type.defaultProps;
     for (propName in defaultProps) {

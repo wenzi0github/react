@@ -387,7 +387,7 @@ export function updateContainer(
   update.payload = {element};
 
   // 处理 callback，这个 callback 其实就是我们调用 ReactDOM.render 时传入的 callback
-  // 不过从React18开始，render不再传入callback了
+  // 不过从React18开始，render不再传入callback了，即下面的if就不会再执行了
   callback = callback === undefined ? null : callback;
   if (callback !== null) {
     if (__DEV__) {
@@ -404,13 +404,20 @@ export function updateContainer(
 
   /**
    * 将update添加到current的更新链表中
-   * 执行后，即current.updateQueue.shared.pending = sharedQueue
-   * sharedQueue是React中经典的循环链表，头指针头像最后插入的那个update节点
+   * 执行后，得到的是 current.updateQueue.shared.pending = sharedQueue
+   * sharedQueue是React中经典的循环链表，
+   * 将下面的update节点插入这个shareQueue的循环链表中，pending指针指向到最后插入的那个节点上
    */
   enqueueUpdate(current, update, lane);
 
+  /**
+   * 整个render()方法的核心就在这里了，这里执行完毕后，render()方法就执行到头了，
+   * 不过这里调用的很多，做了很多事情，如：
+   */
   // scheduleUpdateOnFiber() -> ensureRootIsScheduled(root) -> performSyncWorkOnRoot(root)
   // -> renderRootSync(root) -> workLoopSync()
+    // 这里传入的current已经是fiber节点了，虽然他的下面没有其他fiber子节点，
+    // 但它的updateQueue上有element结构，可以用来构建fiber节点
   const root = scheduleUpdateOnFiber(current, lane, eventTime);
   if (root !== null) {
     entangleTransitions(root, current, lane);

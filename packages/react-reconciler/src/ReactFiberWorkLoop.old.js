@@ -522,9 +522,9 @@ function requestRetryLane(fiber: Fiber) {
 
 /**
  * 更新fiber
- * @param fiber
- * @param lane
- * @param eventTime
+ * @param {Fiber} fiber 初始化时，该fiber节点为hostfiber，没有其他子fiber节点，只有在updateQueue队列中有element结构
+ * @param {Lane} lane
+ * @param {number} eventTime
  * @returns {null|FiberRoot}
  */
 export function scheduleUpdateOnFiber(
@@ -541,6 +541,11 @@ export function scheduleUpdateOnFiber(
     }
   }
 
+  /**
+   * 将当前fiber节点到root节点全部标记为update lane，并返回了该HostRoot节点，
+   * 若HostRoot节点为null，则直接返回
+   * 不过在执行render()初始化时，fiber节点本身就是HostRoot节点
+   */
   const root = markUpdateLaneFromFiberToRoot(fiber, lane);
   if (root === null) {
     return null;
@@ -686,13 +691,21 @@ export function scheduleInitialHydrationOnRoot(
 // work without treating it as a typical update that originates from an event;
 // e.g. retrying a Suspense boundary isn't an update, but it does schedule work
 // on a fiber.
+/**
+ * 从该fiber节点到根的root节点，全都标记为update lane，并返回该HostRoot这个fiber节点
+ * 这被拆分为一个单独的函数，因此我们可以标记具有待处理工作的纤程，而不会将其视为源
+ * 自事件的典型更新； 例如 重试 Suspense 边界不是更新，但它确实安排了光纤上的工作。
+ * @param sourceFiber
+ * @param lane
+ * @returns {null|FiberRoot}
+ */
 function markUpdateLaneFromFiberToRoot(
   sourceFiber: Fiber,
   lane: Lane,
 ): FiberRoot | null {
   // Update the source fiber's lanes
   sourceFiber.lanes = mergeLanes(sourceFiber.lanes, lane);
-  let alternate = sourceFiber.alternate;
+  let alternate = sourceFiber.alternate; // 另一个fiber树，若是在调用render()初始化是，alternate为null
   if (alternate !== null) {
     alternate.lanes = mergeLanes(alternate.lanes, lane);
   }
@@ -764,14 +777,23 @@ export function isInterleavedUpdate(fiber: Fiber, lane: Lane) {
 // of the existing task is the same as the priority of the next level that the
 // root has work on. This function is called on every update, and right before
 // exiting a task.
+/**
+ * 使用此功能为根计划任务。 每个根只有一个任务； 如果已经安排了任务，我们将检查以确
+ * 保现有任务的优先级与 root 正在处理的下一个级别的优先级相同。 每次更新时都会调用
+ * 此函数，并且就在退出任务之前。
+ * @param root
+ * @param currentTime
+ */
 function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
   const existingCallbackNode = root.callbackNode;
 
   // Check if any lanes are being starved by other work. If so, mark them as
   // expired so we know to work on those next.
+  // 将饥饿的车道标记为已过期
   markStarvedLanesAsExpired(root, currentTime);
 
   // Determine the next lanes to work on, and their priority.
+  // 确定下一条要处理的通道及其优先级
   const nextLanes = getNextLanes(
     root,
     root === workInProgressRoot ? workInProgressRootRenderLanes : NoLanes,
