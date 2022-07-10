@@ -1973,7 +1973,7 @@ function performUnitOfWork(unitOfWork: Fiber): void {
 }
 
 /**
- * 1. 调用completeWork对当前fiber节点进行处理；question: completeWork对fiber进行了哪些处理
+ * 1. 调用completeWork对当前fiber节点进行处理；（question: completeWork对fiber进行了哪些处理）
  * 2. 若还有兄弟节点sibling，则在当前循环中执行兄弟节点；
  * 3. 当前节点和兄弟全部遍历完后，则返回其父级节点return；
  * 4. 直到该completedWork节点为null时，停止循环；回到上一层的performUnitOfWork里

@@ -274,7 +274,8 @@ function resolveLazy(lazyType) {
 function ChildReconciler(shouldTrackSideEffects) {
   /**
    * 将returnFiber子元素中，需要删除的fiber节点放到deletions的副作用数组中
-   * 在更新时，将该数组中的fiber节点进行删除
+   * 该方法只删除一个节点
+   * 当前diff时不会立即删除，而是在更新时，将该数组中的fiber节点进行删除
    * @param returnFiber
    * @param childToDelete
    */
@@ -297,9 +298,10 @@ function ChildReconciler(shouldTrackSideEffects) {
 
   /**
    * 删除returnFiber的子元素中，currentFirstChild和其兄弟元素
-   * 即把currentFirstChild的兄弟元素放到returnFiber的deletions的副作用数组中，等待删除
-   * @param returnFiber
-   * @param currentFirstChild
+   * 即把currentFirstChild及其兄弟元素，都放到returnFiber的deletions的副作用数组中，等待删除
+   * 这是一个批量删除节点的方法
+   * @param returnFiber 要删除节点的父级节点
+   * @param currentFirstChild 当前要删除节点的起始节点
    * @returns {null}
    */
   function deleteRemainingChildren(
@@ -349,6 +351,14 @@ function ChildReconciler(shouldTrackSideEffects) {
     return existingChildren;
   }
 
+  /**
+   * 复用fiber节点的alternate，生成一个新的fiber节点
+   * 若alternate为空，则创建；
+   * 若不为空，则直接复用，并将传入的fiber属性和pendingProps的属性给到alternate上
+   * @param fiber
+   * @param pendingProps
+   * @returns {Fiber}
+   */
   function useFiber(fiber: Fiber, pendingProps: mixed): Fiber {
     // We currently set sibling to null and index to 0 here because it is easy
     // to forget to do before returning it. E.g. for the single child case.

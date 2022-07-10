@@ -75,6 +75,33 @@ root.render(<App />);
 
 updateContainer_old() 方法在 packages/react-reconciler/src/ReactFiberReconciler.old.js 的文件中。
 
+updateContainer()方法里的几个知识点： 
+
+在初次更新时，current树为空，我们只能渲染element树（这个element树是从jsx更新过来的）；调用enqueueUpdate()方法，将element放到current的更新队列中，即：
+
+```javascript
+const current = container.current; // FiberRootNode.current 现在指向到当前的fiber树，若是初次执行时，current树只有hostFiber节点，没有其他的
+
+// 结合 lane（优先级）信息，创建 update 对象，一个 update 对象意味着一个更新
+const update = createUpdate(eventTime, lane);
+// Caution: React DevTools currently depends on this property
+// being called "element".
+update.payload = {element};
+
+/**
+ * 将update添加到current的更新链表中
+ * 执行后，得到的是 current.updateQueue.shared.pending = sharedQueue
+ * sharedQueue是React中经典的循环链表，
+ * 将下面的update节点插入这个shareQueue的循环链表中，pending指针指向到最后插入的那个节点上
+ */
+enqueueUpdate(current, update, lane);
+```
+
+接下来就得要进入schedule节点了（scheduleUpdateOnFiber()）。还会做的几件事儿有：
+
+1. 设置状态，在React18中，已经使用lane来标记各个fiber节点的优先级了；
+2. prepareFreshStack(): 设置 rootWorkInProgress，workInProgress；
+3. 初始化时，执行
 
 
 

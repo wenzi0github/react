@@ -370,6 +370,16 @@ function areHookInputsEqual(
   return true;
 }
 
+/**
+ * 通过hook渲染当前fiber节点
+ * @param current
+ * @param workInProgress
+ * @param Component 函数式组件
+ * @param props
+ * @param secondArg
+ * @param nextRenderLanes
+ * @returns {*}
+ */
 export function renderWithHooks<Props, SecondArg>(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -424,6 +434,9 @@ export function renderWithHooks<Props, SecondArg>(
       ReactCurrentDispatcher.current = HooksDispatcherOnMountInDEV;
     }
   } else {
+    // 根据是否是初始化挂载，来决定是初始化hook，还是更新hook
+    // 将初始化或更新hook的方法给到 ReactCurrentDispatcher.current 上，
+    // 稍后执行它
     ReactCurrentDispatcher.current =
       current === null || current.memoizedState === null
         ? HooksDispatcherOnMount

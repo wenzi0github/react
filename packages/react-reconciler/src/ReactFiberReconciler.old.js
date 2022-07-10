@@ -320,7 +320,7 @@ export function createHydrationContainer(
 }
 
 /**
- *
+ * 更新element树，将其更新到container上
  * @param {ReactNodeList} element 虚拟DOM树
  * @param {OpaqueRoot} container FiberRootNode 节点
  * @param {?React$Component<any, any>} parentComponent 在React18传到这里的是null
@@ -416,8 +416,8 @@ export function updateContainer(
    */
   // scheduleUpdateOnFiber() -> ensureRootIsScheduled(root) -> performSyncWorkOnRoot(root)
   // -> renderRootSync(root) -> workLoopSync()
-    // 这里传入的current已经是fiber节点了，虽然他的下面没有其他fiber子节点，
-    // 但它的updateQueue上有element结构，可以用来构建fiber节点
+  // 这里传入的current已经是fiber节点了，虽然他的下面没有其他fiber子节点，
+  // 但它的updateQueue上有element结构，可以用来构建fiber节点
   const root = scheduleUpdateOnFiber(current, lane, eventTime);
   if (root !== null) {
     entangleTransitions(root, current, lane);
