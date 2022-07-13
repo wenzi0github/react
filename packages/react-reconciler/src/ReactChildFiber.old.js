@@ -267,6 +267,7 @@ function resolveLazy(lazyType) {
  * 是否需要做 DOM 操作，需要的话就会在当前 Fiber 节点中打上 EffectTag ，即“追踪”副作用；
  * 而也仅有在 update 的时候，才需要“追踪副作用”，即把 current 这个 Fiber 节点与本次更新组件
  * 状态后的 ReactElement 做对比(diff)，然后得出本次更新的 Fiber 节点，以及在该节点上打上 diff 的结果 —— EffectTag
+ * 相关文档： https://juejin.cn/post/6844903901590716429
  * @param {boolean} shouldTrackSideEffects
  * @returns {(function(Fiber, (Fiber|null), *, Lanes): (Fiber|null))|*}
  * @constructor
