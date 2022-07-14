@@ -203,25 +203,11 @@ ReactElement()方法的作用就是返回一个object结构，我们这里把所
  * the class pattern, so do not use new to call it. Also, instanceof check
  * will not work. Instead test $$typeof field against Symbol.for('react.element') to check
  * if something is a React Element.
- *
- * @param {*} type
- * @param {*} props
- * @param {*} key
- * @param {string|object} ref
- * @param {*} owner
- * @param {*} self A *temporary* helper to detect places where `this` is
- * different from the `owner` when React.createElement is called, so that we
- * can warn. We want to get rid of owner and replace string `ref`s with arrow
- * functions, and as long as `this` and owner are the same, there will be no
- * change in behavior.
- * @param {*} source An annotation object (added by a transpiler or otherwise)
- * indicating filename, line number, and/or other information.
- * @internal
  */
 const ReactElement = function(type, key, ref, self, source, owner, props) {
   const element = {
     // This tag allows us to uniquely identify this as a React Element
-    $$typeof: REACT_ELEMENT_TYPE,
+    $$typeof: REACT_ELEMENT_TYPE, // 用来标识当前是否是React元素
 
     // Built-in properties that belong on the element
     type: type,
@@ -237,4 +223,68 @@ const ReactElement = function(type, key, ref, self, source, owner, props) {
 };
 ```
 
+上面方法注释的大概意思是：现在不再使用类的方式new出一个实例来，因此不再使用instanceOf来判断是否是React元素；而是判断$$typeof字段是否等于`Symbol.for('react.element')`来判断。
+
+我们已经知道 $$typeof 字段的作用是为了标识React元素的，但他的值为什么用Symbol类型呢？稍后我们会单独开辟一篇文章来讲解。这里我们只需要了解该字段是用来是否是React element类型的即可。
+
+到目前位置，我们已经知道了jsx在传入render()方法之前，会编译成什么样子。
+
+我们在`*.jsx`文件中，先直接输出下jsx的结构：
+
+```jsx
+console.log(<div>
+  <span>hello world</span>
+</div>);
+```
+
+在控制台里就能看到这样的结构：
+
+![jsx编译后的结构效果](https://mat1.gtimg.com/qqcdn/tupload/1657818568337.png)
+
+```javascript
+const element = {
+  $$typeof: Symbol(react.element),
+  key: null,
+  props: {
+    children: { // 当children有多个时，会转为数组类型
+      $$typeof: Symbol(react.element),
+      key: null,
+      props: {
+        children: "hello world", // 文本节点没有类型
+      },
+      ref: null,
+      type: "span",
+    },
+  },
+  ref: null,
+  type: "div",
+}
+```
+
+我们再输出一个完整的组件，如一个App组件如下：
+
+```jsx
+const App = ({ username }) => {
+    return (<div>
+      <span>hello {username}</span>
+    </div>);
+};
+```
+
+分别输出下App和<App />：
+
+```javascript
+console.log(<App />, App);
+```
+
+![React组件的jsx编译后](https://mat1.gtimg.com/qqcdn/tupload/1657818568340.png)
+
+单纯的`App`是一个函数，function类型，但这里不能直接执行`App()`，会报错的；而`<App />`则是一个json结构，object类型的，其本来的方法则存放到了type字段中。
+
+因此，在传入到render()方法时，就是这样子的一个object类型的element元素。
+
 ## 3. fiber结构
+
+在上面通过babel转换后的object类似的数据，会在render()方法中将其转为fiber结构。render()方法里具体怎样转换的，我们稍后再讲，这里我们只是看下fiber节点是什么样子。
+
+
