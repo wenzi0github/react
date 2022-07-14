@@ -28,6 +28,11 @@ if (__DEV__) {
   didWarnAboutStringRefs = {};
 }
 
+/**
+ *
+ * @param {string} config
+ * @returns {boolean}
+ */
 function hasValidRef(config) {
   if (__DEV__) {
     if (hasOwnProperty.call(config, 'ref')) {
@@ -281,6 +286,11 @@ export function jsx(type, config, maybeKey) {
     }
   }
 
+  /**
+   * type可能会有两种格式，一种是普通的html标签，一种是组件
+   * 当type是普通的html标签时，为string类型；
+   * 当type是组件时，为function类型，而function类型时，是可以添加defaultProps属性的
+   */
   // Resolve default props
   if (type && type.defaultProps) {
     const defaultProps = type.defaultProps;
