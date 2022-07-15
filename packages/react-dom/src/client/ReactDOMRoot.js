@@ -86,8 +86,8 @@ const defaultOnRecoverableError =
       };
 
 /**
- * 创建
- * @param internalRoot
+ * 创建一个实例，并可以调用render()方法
+ * @param {FiberRoot} internalRoot
  * @constructor
  */
 function ReactDOMRoot(internalRoot: FiberRoot) {
@@ -156,16 +156,18 @@ ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = functio
 ReactDOMHydrationRoot.prototype.unmount = ReactDOMRoot.prototype.unmount = function(): void {
   if (__DEV__) {
     if (typeof arguments[0] === 'function') {
+      // 若传入了callback参数，则给出提示，要想在组件卸载时进行回调，
+      // 请使用useEffect()
       console.error(
         'unmount(...): does not support a callback argument. ' +
           'To execute a side effect after rendering, declare it in a component body with useEffect().',
       );
     }
   }
-  const root = this._internalRoot;
+  const root = this._internalRoot; // FiberRootNode节点，我们在new的时候，将其给到了该属性
   if (root !== null) {
-    this._internalRoot = null;
-    const container = root.containerInfo;
+    this._internalRoot = null; // 置为空
+    const container = root.containerInfo; // dom元素
     if (__DEV__) {
       if (isAlreadyRendering()) {
         console.error(
@@ -176,8 +178,16 @@ ReactDOMHydrationRoot.prototype.unmount = ReactDOMRoot.prototype.unmount = funct
       }
     }
     flushSync(() => {
+      // 解除root中的所有fiber节点
       updateContainer(null, root, null, null);
     });
+
+    /**
+     * 我们在createRoot中，将root.current给到了container属性，标记container为已使用
+     * container['__reactContainer$'] = root.current;
+     * 这里我们将其解除指向：
+     * container['__reactContainer$'] = null;
+     */
     unmarkContainerAsRoot(container);
   }
 };
@@ -259,8 +269,10 @@ export function createRoot(
     onRecoverableError,
     transitionCallbacks,
   );
-  // 将container标记为已被作为root使用过
-  // 并通过一个属性指向到fiber节点， container['__reactContainer$'] = root.current; // root为fiber类型的节点
+  // 将DOM节点 container 标记为已被作为root使用过
+  // 并通过一个属性指向到fiber节点：
+  // container['__reactContainer$'] = root.current; // root为fiber类型的节点
+  // 这里就形成了互相指向，root.containerInfo = container;
   markContainerAsRoot(root.current, container);
 
   // 获取container的真实element元素，若container是注释类型的元素，则使用其父级元素，否则直接使用container

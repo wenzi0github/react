@@ -285,6 +285,106 @@ console.log(<App />, App);
 
 ## 3. fiber结构
 
-在上面通过babel转换后的object类似的数据，会在render()方法中将其转为fiber结构。render()方法里具体怎样转换的，我们稍后再讲，这里我们只是看下fiber节点是什么样子。
+在上面通过babel转换后的object类似的数据，会在render()方法中将其转为fiber结构。render()方法里具体怎样转换的，我们稍后再讲，这里我们只是看下fiber节点的结构。
+
+```javascript
+/**
+ * 创建fiber节点
+ * @param {WorkTag} tag
+ * @param {mixed} pendingProps
+ * @param {null | string} key
+ * @param {TypeOfMode} mode
+ * @constructor
+ */
+function FiberNode(
+  tag: WorkTag,
+  pendingProps: mixed,
+  key: null | string,
+  mode: TypeOfMode,
+) {
+  // Instance
+  this.tag = tag; // 当前节点的类型，如 FunctionComponent, ClassComponent 等
+
+  /**
+   * 这个字段和 react element 的 key 的含义和内容有一样（因为这个 key 是
+   * 从 react element 的key 那里直接拷贝赋值过来的），作为 children 列表
+   * 中每一个 item 的唯一标识。它被用于帮助 React 去计算出哪个 item 被修改了，
+   * 哪个 item 是新增的，哪个 item 被删除了。
+   * @type {string}
+   */
+  this.key = key;
+  this.elementType = null;
+
+  /**
+   * 当前fiber节点的元素类型，与React Element里的type类型一样，若是原生的html标签，
+   * 则 type 为该标签的类型（'div', 'span' 等）；若是自定义的Class Component或
+   * Function Component等，则该type的值就是该class或function，后续会按照上面的tag字段，
+   * 来决定是用new初始化一个实例（当前是 Class Component），然后执行该class内
+   * 的render()方法；还是执行该type（当前是 Function Component），得到其返回值；
+   */
+  this.type = null;
+  this.stateNode = null;
+
+  /**
+   * 下面的return, child和sibling都是指针，用来指向到其他的fiber节点，
+   * React会将jsx编译成的element结构，转为以fiber为节点的链表结构，
+   * return: 指向到父级fiber节点；
+   * child: 指向到该节点的第1个子节点；
+   * sibling: 指向到该节点的下一个兄弟节点；
+   * 如图所示：https://pic4.zhimg.com/80/v2-a825372d761879bd1639016e6db93947_1440w.jpg
+   */
+  this.return = null;
+  this.child = null;
+  this.sibling = null;
+  this.index = 0;
+
+  this.ref = null;
+
+  this.pendingProps = pendingProps;
+  this.memoizedProps = null;
+  this.updateQueue = null;
+  this.memoizedState = null;
+  this.dependencies = null;
+
+  this.mode = mode;
+
+  // Effects
+  this.flags = NoFlags;
+  this.subtreeFlags = NoFlags;
+  this.deletions = null;
+
+  this.lanes = NoLanes;
+  this.childLanes = NoLanes;
+
+  /**
+   * 双缓冲：防止数据丢失，提高效率（之后Dom-diff的时候可以直接比较或者使用
+   * React在进行diff更新时，会维护两颗fiber树，一个是当前正在展示的，一个是
+   * 通过diff对比后要更新的树，这两棵树中的每个fiber节点通过 alternate 属性
+   * 进行互相指向。
+   */
+  this.alternate = null;
+}
+```
+
+React中大到组件，小到html标签，都会转为fiber节点构建的fiber链表。
+
+为什么要使用fiber链表？这里我们稍微了解下，后面会详细介绍fiber链表如何进行diff每个fiber节点的。
+
+### Stack Reconciler
+
+在 React 15.x 版本以及之前的版本，Reconciliation 算法采用了栈调和器（ Stack Reconciler ）来实现，但是这个时期的栈调和器存在一些缺陷：不能暂停渲染任务，不能切分任务，无法有效平衡组件更新渲染与动画相关任务的执行顺序，即不能划分任务的优先级（这样有可能导致重要任务卡顿、动画掉帧等问题）。Stack Reconciler 的实现。
+
+### Fiber Reconciler
+
+为了解决 Stack Reconciler 中固有的问题，以及一些历史遗留问题，在 React 16 版本推出了新的 Reconciliation 算法的调和器—— Fiber 调和器（Fiber Reconciler）来替代栈调和器。Fiber Reconciler 将会利用调度器（Scheduler）来帮忙处理组件渲染/更新的工作。此外，引入 fiber 这个概念后，原来的 react element tree 有了一棵对应的 fiber node tree。在 diff 两棵 react element tree 的差异时，Fiber Reconciler 会基于 fiber node tree 来使用 diff 算法，通过 fiber node 的 return、child、sibling 属性能更方便的遍历 fiber node tree，从而更高效地完成 diff 算法。
+
+### Fiber Reconciler 功能(优点)
+
+1. 能够把可中断的任务切片处理;
+2. 能够调整任务优先级，重置并复用任务；
+3. 可以在父子组件任务间前进后退切换任务；
+4. render 方法可以返回多个元素（即可以返回数组）；
+5. 支持异常边界处理异常；
+
 
 
