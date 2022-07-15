@@ -150,7 +150,7 @@ function FiberRootNode(
 
 /**
  * 创建FiberRoot
- * @param {*} containerInfo
+ * @param {*} containerInfo 要挂载React应用的DOM节点
  * @param {RootTag} tag fiber节点的类型，0是之前legacy模式，1是现在最新的Concurrent模式，通过createRoot()传入的是1
  * @param {*} hydrate
  * @param {*} hydrationCallbacks

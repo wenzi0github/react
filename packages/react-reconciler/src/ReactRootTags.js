@@ -7,7 +7,7 @@
  * @flow
  */
 
-export type RootTag = 0 | 1;
+export type RootTag = 0 | 1; // 根的类型
 
-export const LegacyRoot = 0;
-export const ConcurrentRoot = 1;
+export const LegacyRoot = 0; // 旧的开发模式的根类型
+export const ConcurrentRoot = 1; // 并发模式的根类型

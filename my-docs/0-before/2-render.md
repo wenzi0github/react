@@ -2,7 +2,9 @@
 
 > 我们解析的源码是React18.0.2版本，请注意版本号。GitHub仓库地址：[https://github.com/wenzi0github/react](https://github.com/wenzi0github/react)。
 
-## 1. render() 方法的
+## 1. render() 方法
+
+render() 方法是整个React应用的入口方法，所有的jsx渲染、hook的挂载和执行等，都在这个里面。
 
 从React18开始，`render()`方法的使用跟之前不一样了。
 

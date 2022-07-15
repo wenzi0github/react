@@ -245,6 +245,18 @@ function findHostInstanceWithWarning(
   return findHostInstance(component);
 }
 
+/**
+ * 创建整个应用的根节点，用来挂载React应用
+ * @param {Element | Document | DocumentFragment} containerInfo
+ * @param {RootTag} tag 创建根节点的模式，在React18中是1，即并发模式；之前是0，即普通模式
+ * @param {null | SuspenseHydrationCallbacks} hydrationCallbacks render()中调用时为null
+ * @param {boolean} isStrictMode
+ * @param {boolean} concurrentUpdatesByDefaultOverride 默认情况下的并发更新覆盖，默认为false
+ * @param {string} identifierPrefix 标识符前缀，默认为空字符串
+ * @param {(error: mixed) => void} onRecoverableError 错误输出函数
+ * @param {null | TransitionTracingCallbacks} transitionCallbacks 默认为null
+ * @returns {FiberRoot} 整个应用的根节点
+ */
 export function createContainer(
   containerInfo: Container,
   tag: RootTag,
