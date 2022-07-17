@@ -372,6 +372,11 @@ function areHookInputsEqual(
 
 /**
  * 通过hook渲染当前fiber节点
+ * updateFunctionComponent()里调用该方法，因此current（如果存在的话）和workInProgress一定是Function Component对应的那个fiber节点
+ * 其他类型的fiber节点会走到其他分支，调用其他方法来进行处理；
+ * 初始化时会调用一次，用于在调用诸如useState, useEffect等初始化这些hooks
+ * 这里会判断current，来决定是初始化还是更新；每个hook都分为mount和update，若是初始化，则调用mount来初始化hook；
+ * 若是更新阶段，则调用update来更新hooks
  * @param current
  * @param workInProgress
  * @param Component 函数式组件
@@ -389,7 +394,7 @@ export function renderWithHooks<Props, SecondArg>(
   nextRenderLanes: Lanes,
 ): any {
   renderLanes = nextRenderLanes;
-  currentlyRenderingFiber = workInProgress;
+  currentlyRenderingFiber = workInProgress; // 当前Function Component对应的fiber节点
 
   if (__DEV__) {
     hookTypesDev =
@@ -444,7 +449,7 @@ export function renderWithHooks<Props, SecondArg>(
   }
 
   /**
-   * 执行 Function Component，得到React.createElement执行后的虚拟dom结构
+   * 执行 Function Component，将我们写的jsx通过babel编译为element结构
    */
   let children = Component(props, secondArg);
 

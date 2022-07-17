@@ -155,6 +155,14 @@ const ReactElement = function(type, key, ref, self, source, owner, props) {
     // This tag allows us to uniquely identify this as a React Element
     $$typeof: REACT_ELEMENT_TYPE,
 
+    /**
+     * 我们的节点有有三种类型：
+     * 1. 普通的html标签，type为该标签的tagName，如div, span等；
+     * 2. 当前是Function Component节点时，则type该组件的函数体，即可以执行type()；
+     * 3. 当前是Class Component节点，则type为该class，可以通过该type，new出一个实例；
+     * 而type对应的是Function Component时，可以给该组件添加defaultProps属性，
+     * 当设置了defaultProps，则将未明确传入的属性给到props里
+     */
     // Built-in properties that belong on the element
     type: type,
     key: key,
@@ -287,9 +295,12 @@ export function jsx(type, config, maybeKey) {
   }
 
   /**
-   * type可能会有两种格式，一种是普通的html标签，一种是组件
-   * 当type是普通的html标签时，为string类型；
-   * 当type是组件时，为function类型，而function类型时，是可以添加defaultProps属性的
+   * 我们的节点有有三种类型：
+   * 1. 普通的html标签，type为该标签的tagName，如div, span等；
+   * 2. 当前是Function Component节点时，则type该组件的函数体，即可以执行type()；
+   * 3. 当前是Class Component节点，则type为该class，可以通过该type，new出一个实例；
+   * 而type对应的是Function Component时，可以给该组件添加defaultProps属性，
+   * 当设置了defaultProps，则将未明确传入的属性给到props里
    */
   // Resolve default props
   if (type && type.defaultProps) {

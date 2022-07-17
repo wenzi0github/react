@@ -164,6 +164,7 @@ if (__DEV__) {
 
 /**
  * 初始化一个UpdateQueue，并将 updateQueue 给了 fiber
+ * updateQueue队列是fiber更新时要执行的内容
  * @param fiber
  */
 export function initializeUpdateQueue<State>(fiber: Fiber): void {

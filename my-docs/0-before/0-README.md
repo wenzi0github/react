@@ -125,13 +125,7 @@ export function jsx(type, config, maybeKey) {
 
   let key = null;
   let ref = null;
-
-  // Currently, key can be spread in as a prop. This causes a potential
-  // issue if key is also explicitly declared (ie. <div {...props} key="Hi" />
-  // or <div key="Hi" {...props} /> ). We want to deprecate key spread,
-  // but as an intermediary step, we will use jsxDEV for everything except
-  // <div {...props} key="Hi" />, because we aren't currently able to tell if
-  // key is explicitly declared to be undefined or not.
+  
   // 若设置了key，则使用该key
   if (maybeKey !== undefined) {
     if (__DEV__) {
@@ -163,11 +157,13 @@ export function jsx(type, config, maybeKey) {
       props[propName] = config[propName];
     }
   }
-
+  
   /**
-   * type可能会有两种格式，一种是普通的html标签，一种是组件
-   * 当type是普通的html标签时，为string类型；
-   * 当type是组件时，为function类型，而function类型时，是可以添加defaultProps属性的
+   * 我们的节点有有三种类型：
+   * 1. 普通的html标签，type为该标签的tagName，如div, span等；
+   * 2. 当前是Function Component节点时，则type该组件的函数体，即可以执行type()；
+   * 3. 当前是Class Component节点，则type为该class，可以new出一个实例；
+   * 而type对应的是Function Component时，可以给该组件添加defaultProps属性，
    * 当设置了defaultProps，则将未明确传入的属性给到props里
    */
   // Resolve default props
@@ -209,6 +205,14 @@ const ReactElement = function(type, key, ref, self, source, owner, props) {
     // This tag allows us to uniquely identify this as a React Element
     $$typeof: REACT_ELEMENT_TYPE, // 用来标识当前是否是React元素
 
+    /**
+     * 我们的节点有有三种类型：
+     * 1. 普通的html标签，type为该标签的tagName，如div, span等；
+     * 2. 当前是Function Component节点时，则type该组件的函数体，即可以执行type()；
+     * 3. 当前是Class Component节点，则type为该class，可以通过该type，new出一个实例；
+     * 而type对应的是Function Component时，可以给该组件添加defaultProps属性，
+     * 当设置了defaultProps，则将未明确传入的属性给到props里
+     */
     // Built-in properties that belong on the element
     type: type,
     key: key,
@@ -281,6 +285,20 @@ console.log(<App />, App);
 
 单纯的`App`是一个函数，function类型，但这里不能直接执行`App()`，会报错的；而`<App />`则是一个json结构，object类型的，其本来的方法则存放到了type字段中。
 
+我们在上面的代码中已经说了type字段的含义，这里再说下跟type相关的children字段。当type为html标签时，children就其下面所有的子节点。当只有一个子节点时，children为object类型，当有多个子节点时，children是array类型。
+
+有些同学可能一时反应不过来，觉得组件<App />的children是其内部返回的jsx结构。这是不对的。这里我们要把组件也当做一个跟普通html标签一样的标签来对待，组件的children就是该组件标签包裹的内容。组件里的内容，可以通过执行`type`字段对应的function或class来获得。如：
+
+```jsx
+const Start = (<div>
+    <App>
+        <p>this is app children</p>
+    </App>  
+</div>);
+```
+
+这里`<App>`标签里的p标签才是他的children。
+
 因此，在传入到render()方法时，就是这样子的一个object类型的element元素。
 
 ## 3. fiber结构
@@ -349,9 +367,9 @@ function FiberNode(
   this.mode = mode;
 
   // Effects
-  this.flags = NoFlags;
-  this.subtreeFlags = NoFlags;
-  this.deletions = null;
+  this.flags = NoFlags; // 该节点更新的优先级，若为NoFlags时，则表示不更新
+  this.subtreeFlags = NoFlags; // 子节点的更新情况，若为NoFlags，则表示其子节点不更新，在diff时可以直接跳过
+  this.deletions = null; // 子节点中需要删除的节点
 
   this.lanes = NoLanes;
   this.childLanes = NoLanes;

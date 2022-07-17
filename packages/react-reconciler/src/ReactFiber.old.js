@@ -176,9 +176,9 @@ function FiberNode(
   this.mode = mode;
 
   // Effects
-  this.flags = NoFlags;
-  this.subtreeFlags = NoFlags;
-  this.deletions = null;
+  this.flags = NoFlags; // 该节点更新的优先级，若为NoFlags时，则表示不更新
+  this.subtreeFlags = NoFlags; // 子节点的更新情况，若为NoFlags，则表示其子节点不更新，在diff时可以直接跳过
+  this.deletions = null; // 子节点中需要删除的节点
 
   this.lanes = NoLanes;
   this.childLanes = NoLanes;
