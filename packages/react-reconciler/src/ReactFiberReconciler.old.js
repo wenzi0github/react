@@ -393,6 +393,17 @@ export function updateContainer(
   }
 
   // 结合 lane（优先级）信息，创建 update 对象，一个 update 对象意味着一个更新
+  /**
+   * const update: Update<*> = {
+   *   eventTime,
+   *   lane,
+   *   tag: UpdateState,
+   *   payload: null,
+   *   callback: null,
+   *   next: null,
+   * };
+   * @type {Update<*>}
+   */
   const update = createUpdate(eventTime, lane);
   // Caution: React DevTools currently depends on this property
   // being called "element".
@@ -424,12 +435,15 @@ export function updateContainer(
 
   /**
    * 整个render()方法的核心就在这里了，这里执行完毕后，render()方法就执行到头了，
-   * 不过这里调用的很多，做了很多事情，如：
+   * 不过这里调用的链路很深，做了很多事情，如：
+   * 流程图： https://docs.qq.com/flowchart/DS0pVdnB0bmlVRkly?u=7314a95fb28d4269b44c0026faa673b7
+   * scheduleUpdateOnFiber() -> ensureRootIsScheduled(root) -> performSyncWorkOnRoot(root)
+   * -> renderRootSync(root) -> workLoopSync()
    */
-  // scheduleUpdateOnFiber() -> ensureRootIsScheduled(root) -> performSyncWorkOnRoot(root)
-  // -> renderRootSync(root) -> workLoopSync()
-  // 这里传入的current已经是fiber节点了，虽然他的下面没有其他fiber子节点，
-  // 但它的updateQueue上有element结构，可以用来构建fiber节点
+  /**
+   * 这里传入的current是HostRootFiber的fiber节点了，虽然他的下面没有其他fiber子节点，
+   * 但它的updateQueue上有element结构，可以用来构建fiber节点
+   */
   const root = scheduleUpdateOnFiber(current, lane, eventTime);
   if (root !== null) {
     entangleTransitions(root, current, lane);
