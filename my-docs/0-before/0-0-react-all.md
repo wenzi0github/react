@@ -53,6 +53,32 @@
 
 ## 6. React18的整体架构
 
+React是一个声明式的UI库，我们通过组件的形式声明UI，React会为我们输出DOM并渲染到页面上。
+
+```mermaid
+graph LR;
+  UI --> React
+  React --> DOM
+```
+
+在React中，对UI的声明是通过一种称为JSX的语法糖来实现。JSX在编译时会被Babel转换为React.createElement方法。
+
+React中主要会经历3个阶段：
+
+1. schedule阶段：每个任务的优先级是不一样的，如用户触发的任务优先级最高，应当优先执行，对于异步任务可以延迟执行；schedule阶段为每个触发的任务进行优先级的排序；
+2. render阶段：按照上面阶段设定好优先级，进行diff的对比，如是否有可复用的节点、排查出需要删除的节点，需要新增的fiber节点等，并且将jsx转为fiber节点；这个阶段执行完毕后，会出来两个产物，一个是新状态下的fiber树，再一个是需要变动节点的链表（如要删除的、新增的、插入的等等）如果是初始化阶段的话，所有的变动都是新增的特性；
+3. commit阶段：按照新整理出来的变动链表进行最小化的更新；
+
+render阶段产生变动的节点，并不会在这里直接对DOM进行修改，这个阶段只是前后两棵fiber树对比，和收集变更的阶段。
+
+commit阶段是将上面render阶段收集到的所有变动更新到视图上，但最终怎么更新，还需要我们的应用场景。若我们是web端，则是通过react-dom中的方法转为dom节点，其他的还有：
+
+* ReactDOM 渲染到浏览器端
+* ReactNative 渲染App原生组件
+* ReactTest 渲染出纯Js对象用于测试
+* ReactArt 渲染到Canvas, SVG 或 VML (IE8)
+
+https://juejin.cn/post/6844904131795091464#heading-2
 
 
 
