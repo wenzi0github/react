@@ -354,7 +354,9 @@ export function updateContainer(
    * current:
    * const uninitializedFiber = createHostRootFiber(tag, isStrictMode, concurrentUpdatesByDefaultOverride,);
    */
-  const current = container.current; // FiberRootNode.current 现在指向到当前的fiber树，若是初次执行时，current树只有hostFiber节点，没有其他的
+  // FiberRootNode.current 现在指向到当前的fiber树，
+  // 若是初次执行时，current树只有hostFiber节点，没有其他的
+  const current = container.current;
   const eventTime = requestEventTime();
   const lane = requestUpdateLane(current);
 

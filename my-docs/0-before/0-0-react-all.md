@@ -78,7 +78,9 @@ commit阶段是将上面render阶段收集到的所有变动更新到视图上�
 * ReactTest 渲染出纯Js对象用于测试
 * ReactArt 渲染到Canvas, SVG 或 VML (IE8)
 
-https://juejin.cn/post/6844904131795091464#heading-2
+参考链接：
+
+* https://juejin.cn/post/6844904131795091464#heading-2
 
 
 
