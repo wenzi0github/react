@@ -7,9 +7,11 @@
  * @flow
  */
 
-import * as React from 'react';
+// import * as React from 'react'; // debug-react中备份
 
-const ReactSharedInternals =
-  React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+// const ReactSharedInternals =
+//   React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED; // debug-react中备份
+
+import ReactSharedInternals from '../react/src/ReactSharedInternals'; // debug-react中修改
 
 export default ReactSharedInternals;

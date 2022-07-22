@@ -8,3 +8,16 @@
 'use strict';
 
 export * from './src/forks/Scheduler';
+
+// debug-react调试仓库中添加
+export {
+  unstable_flushAllWithoutAsserting,
+  unstable_flushNumberOfYields,
+  unstable_flushExpired,
+  unstable_clearYields,
+  unstable_flushUntilNextPaint,
+  unstable_flushAll,
+  unstable_yieldValue,
+  unstable_advanceTime,
+  unstable_setDisableYieldValue,
+} from './src/forks/SchedulerMock';

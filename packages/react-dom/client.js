@@ -54,3 +54,8 @@ export function hydrateRoot(
     }
   }
 }
+
+// debug-react项目中新增
+const ReactDOM = { createRoot, hydrateRoot };
+export default ReactDOM;
+// debug-react项目中新增结束

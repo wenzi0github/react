@@ -81,3 +81,8 @@ export {
   useTransition,
   version,
 } from './src/React';
+
+// debug-react项目中新增
+import * as React from './src/React';
+export default React;
+// debug-react项目中新增结束

@@ -40,57 +40,6 @@ const element = {
 }
 ```
 
-updateContainer() 方法的作用就是将传进来的element转为fiber结构，然后更新到container中。
+scheduleUpdateOnFiber() 函数调用的链路很深，我们通过这个[render()流程图](https://docs.qq.com/flowchart/DS0pVdnB0bmlVRkly?u=7314a95fb28d4269b44c0026faa673b7)，也可以看到，通过后续各种方法的调用，将上面的element结构转成了fiber结构。而且，useState()更新时，链路流程差不多，只不过细节上有些差异，如初始化时不用收集副作用，更新的类型全部为插入操作，不用进行两个fiber树的diff对比等。
 
-我们把代码精简一下：
-
-```javascript
-/**
- * 更新element树，将其更新到container上
- * @param {ReactNodeList} element 虚拟DOM树
- * @param {OpaqueRoot} container FiberRootNode 节点
- * @param {?React$Component<any, any>} parentComponent 在React18传到这里的是null
- * @param {?Function} callback render()里的callback，不过从React18开始就没了，传入的是null
- * @returns {Lane}
- */
-export function updateContainer(
-  element: ReactNodeList,
-  container: OpaqueRoot,
-  parentComponent: ?React$Component<any, any>,
-  callback: ?Function,
-): Lane {
-  // FiberRootNode.current 现在指向到当前的fiber树，
-  // 若是初次执行时，current树只有hostFiber节点，没有其他的
-  const current = container.current;
-
-  /**
-   * 这两个语句会创建一个update结构：
-   * const update: Update<*> = {
-        eventTime,
-        lane,
-        tag: UpdateState,
-        payload: {element},
-        callback: null,
-        next: null,
-      };
-   */
-  const update = createUpdate(eventTime, lane);
-  update.payload = {element};
-
-  /**
-   * 将update添加到current的更新链表中
-   * 将上面的update节点插入这个shareQueue的循环链表中，pending指针指向到最后插入的那个节点上
-   * 执行后，得到的是 current.updateQueue.shared.pending = sharedQueue
-   */
-  enqueueUpdate(current, update, lane);
-
-  /**
-   * 这里传入的current是HostRootFiber的fiber节点了，虽然他的下面没有其他fiber子节点，
-   * 但它的updateQueue上有element结构，可以用来构建fiber节点
-   */
-  const root = scheduleUpdateOnFiber(current, lane, eventTime);
-}
-```
-
-scheduleUpdateOnFiber() 函数比较复杂，这里单拿出进行讲解。
-
+从 scheduleUpdateOnFiber() 函数的名字中就可以看出，这是对每个fiber节点赋予不同的优先级
