@@ -1,5 +1,3 @@
-# React18 源码解析之 render()入口方法
-
 > 我们解析的源码是 React18.1.0 版本，请注意版本号。React 源码学习的 GitHub 仓库地址：[https://github.com/wenzi0github/react](https://github.com/wenzi0github/react)。
 
 ## 1. render() 方法的使用
@@ -63,8 +61,8 @@ export function createRoot(container: Element | Document | DocumentFragment, opt
    * fiberRootNode 默认指向到current,
    * workInProgress更新并commit完毕后，fiberRootNode会指向到workProgress
    * 调用链路： createContainer() -> createFiberRoot() -> {new FiberRootNode(), createHostRootFiber()} -> createFiber() -> new FiberNode()
-   * root节点自己是通过 new FiberRootNode() 初始化出来的实例，属性也非常多，
-   * 当前我们可以只关注其中的两个属性
+   * root节点是通过 new FiberRootNode() 初始化出来的实例，属性也非常多，
+   * 当前我们可以只关注其中的两个属性：
    * root.current: 指向到哪棵fiber树；初始化时会指向到一颗空树，因为刚开始时还没有树；
    * root.containerInfo: 创建当前节点时的dom节点
    */
@@ -100,16 +98,14 @@ export function createRoot(container: Element | Document | DocumentFragment, opt
 
 我们再提炼下其中的流程：
 
-1. isValidContainer(container): 判断传入的 dom 节点 container 是否是个合法的挂载对象，如普通的 element 节点（如<div>, <p>等），document 节点，文档片段节点等，都是合法的挂载对象；额外的，注释节点就不是一个合法的挂载对象；
+1. isValidContainer(container): 判断传入的 dom 节点 container 是否是个合法的挂载对象，如普通的 element 节点（如`<div>`, `<p>`等），document 节点，文档片段节点等，都是合法的挂载对象；额外的，注释节点就不是一个合法的挂载对象；
 2. warnIfReactDOMContainerInDEV(container): 若 container 为 body 或已被作为 root 使用过，则在 dev 环境发出警告；
 3. const root = createContainer(container): 创建一个 FiberRootNode 类型的节点，在 React 中，存在两棵树， FiberRootNode 用来决定指向到哪棵树；
 4. markContainerAsRoot(root.current, container): 将 container 标记上，若重复使用，则发出警告；
 5. listenToAllSupportedEvents(rootContainerElement): 挂载事件，若传入的 container 是注释类型元素，则使用其父级节点挂载事件；jsx 中的诸如 onClick, onChange 等事件，并不是真的挂载当前节点上的，而是通过事件代理（又称事件委托）的方式，将事件冒泡到根节点上进行处理。
 6. new ReactDOMRoot(root): 最终返回一个 ReactDOMRoot(root) 的实例，render()方法就是这个类的一个实例；
 
-createContainer()
-
-上面的每个函数我们都没有去关注他具体的实现，只是先看下大致的流程，避免因太多深入某一项，导致忘记大局流程，造成思维混乱。我们可以看到上面的`createContainer()`函数的调用流程，各种函数的调用，若我们要弄懂每个函数的功能，并一直探到最终的 FiberNode()函数，那 render()方法的主要功能就已经忘得差不多了。
+上面的每个函数我们都没有去关注他具体的实现，只是先看下大致的流程，避免因太多深入某一项，导致忘记大局流程，造成思维混乱。我们可以看到上面的`createContainer()`函数的调用链路很深，一直到最终的 FiberNode() 函数。这里我们仅了解这些函数的大致功能，后续我们会一一进行解析。
 
 ## 3. ReactDOMRoot() 类的实现
 
