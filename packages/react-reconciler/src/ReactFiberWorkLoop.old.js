@@ -250,6 +250,25 @@ import {processTransitionCallbacks} from './ReactFiberTracingMarkerComponent.old
 
 const ceil = Math.ceil;
 
+/**
+ * ReactSharedInternals 是从 shared/ReactSharedInternals.js 引用的，源码如下：
+ * import * as React from 'react';
+ *
+ * const ReactSharedInternals =
+ *    React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+ *
+ * 这个名字就很有意思，__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED，千万不要使用，否则你会被解雇的
+ * 这个 key 是从 react导出的，从源码 react/src/React.js 文件中可以看到：
+ * { ReactSharedInternals as __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED, }
+ * 源码追踪到 react/src/ReactCurrentDispatcher.js，
+ * https://github.com/wenzi0github/react/blob/d7f0153e0ed576519f6de85be6c603c5fd5a6d7d/packages/react/src/ReactCurrentDispatcher.js#L15
+ * 即一个function component执行的mount操作还是update操作，是 ReactCurrentDispatcher.current 中存储的hooks来决定
+ * 那 ReactCurrentDispatcher.current 中存储的hooks，是怎么决定的呢？
+ * 整个流程：
+ * 1. 若当前fiber阶段是function component，则执行 updateFunctionComponent()，这里面会执行 renderWithHooks()，
+ * 2. renderWithHooks()中会判断当前fiber树是否为空，来决定是mount的hooks还是update的hooks；
+ * https://github.com/wenzi0github/react/blob/d7f0153e0ed576519f6de85be6c603c5fd5a6d7d/packages/react-reconciler/src/ReactFiberHooks.old.js#L441
+ */
 const {
   ReactCurrentDispatcher,
   ReactCurrentOwner,
@@ -546,7 +565,7 @@ export function scheduleUpdateOnFiber(
   }
 
   /**
-   * 将当前fiber节点到root节点全部标记为update lane，并返回了该HostRoot节点，
+   * 当前fiber节点添加传入 lane 优先级，并将父级节点到根节点的childLanes添加lane，最后返回该HostRoot节点，
    * 若HostRoot节点为null，则直接返回
    * 不过在执行render()初始化时，fiber节点本身就是HostRoot节点
    */
@@ -696,7 +715,7 @@ export function scheduleInitialHydrationOnRoot(
 // e.g. retrying a Suspense boundary isn't an update, but it does schedule work
 // on a fiber.
 /**
- * 从该fiber节点到根的root节点，全都标记为update lane，并返回该HostRoot这个fiber节点
+ * fiber节点添加传入 lane 优先级，并更新从父级节点到根节点的childLanes，最后返回该HostRoot这个fiber节点
  * 这被拆分为一个单独的函数，因此我们可以标记具有待处理工作的纤程，而不会将其视为源
  * 自事件的典型更新； 例如 重试 Suspense 边界不是更新，但它确实安排了光纤上的工作。
  * @param sourceFiber
@@ -708,9 +727,10 @@ function markUpdateLaneFromFiberToRoot(
   lane: Lane,
 ): FiberRoot | null {
   // Update the source fiber's lanes
-  sourceFiber.lanes = mergeLanes(sourceFiber.lanes, lane);
+  sourceFiber.lanes = mergeLanes(sourceFiber.lanes, lane); // 将传入的lane合并到fiber节点上
   let alternate = sourceFiber.alternate; // 另一个fiber树，若是在调用render()初始化是，alternate为null
   if (alternate !== null) {
+    // 若alternate不为空，说明是更新节点，这里将另一棵树也更新优先级
     alternate.lanes = mergeLanes(alternate.lanes, lane);
   }
   if (__DEV__) {
@@ -722,14 +742,17 @@ function markUpdateLaneFromFiberToRoot(
     }
   }
   // Walk the parent path to the root and update the child lanes.
+  // 从父节点到跟节点，全部更新这个节点的childLanes字段，表示这个节点的子节点有lane的更新
   let node = sourceFiber;
   let parent = sourceFiber.return;
   while (parent !== null) {
     parent.childLanes = mergeLanes(parent.childLanes, lane);
     alternate = parent.alternate;
     if (alternate !== null) {
+      // 若另一棵fiber树不为空，则同时更新另一棵树的childLanes
       alternate.childLanes = mergeLanes(alternate.childLanes, lane);
     } else {
+      // alternate为空，说明是mount阶段，不用管
       if (__DEV__) {
         if ((parent.flags & (Placement | Hydrating)) !== NoFlags) {
           warnAboutUpdateOnNotYetMountedFiberInDEV(sourceFiber);
@@ -739,10 +762,12 @@ function markUpdateLaneFromFiberToRoot(
     node = parent;
     parent = parent.return;
   }
+  // 当parent为空时，node正常情况下是 HostRoot 类型
   if (node.tag === HostRoot) {
     const root: FiberRoot = node.stateNode;
     return root;
   } else {
+    // 若node不是 HostRoot 类型，可能的情况时，该fiber树是独立于react单独构建出来的
     return null;
   }
 }

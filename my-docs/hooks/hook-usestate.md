@@ -43,7 +43,7 @@ graph TD;
 
 ## mount 阶段
 
-入口函数为[mountState](https://github.com/wenzi0github/react/blob/main/packages/react-reconciler/src/ReactFiberHooks.old.js#L1555) 。初始化阶段相对来说比较简单，不过这里确实还有几个问题没弄明白。
+入口函数为[mountState](https://github.com/wenzi0github/react/blob/d7f0153e0ed576519f6de85be6c603c5fd5a6d7d/packages/react-reconciler/src/ReactFiberHooks.old.js#L1585) 。初始化阶段相对来说比较简单，不过这里确实还有几个问题没弄明白。
 
 ```javascript
 /**
@@ -227,7 +227,7 @@ function updateState<S>(
 }
 ```
 
-我们来看看 [updateReducer()](https://github.com/wenzi0github/react/blob/main/packages/react-reconciler/src/ReactFiberHooks.old.js#L761) 里面干了什么，这里可以直接看源码，我在源码中做了注解。
+我们来看看 [updateReducer()](https://github.com/wenzi0github/react/blob/d7f0153e0ed576519f6de85be6c603c5fd5a6d7d/packages/react-reconciler/src/ReactFiberHooks.old.js#L791) 里面干了什么，这里可以直接看源码，我在源码中做了注解。
 
 这里面主要做了这几件事儿：
 
