@@ -1,12 +1,12 @@
-# React18源码解析之render()入口方法
+# React18 源码解析之 render()入口方法
 
-> 我们解析的源码是React18.0.2版本，请注意版本号。GitHub仓库地址：[https://github.com/wenzi0github/react](https://github.com/wenzi0github/react)。
+> 我们解析的源码是 React18.1.0 版本，请注意版本号。React 源码学习的 GitHub 仓库地址：[https://github.com/wenzi0github/react](https://github.com/wenzi0github/react)。
 
-## 1. render() 方法
+## 1. render() 方法的使用
 
-render() 方法是整个React应用的入口方法，所有的jsx渲染、hook的挂载和执行等，都在这个里面。
+render() 方法是整个 React 应用的入口方法，所有的 jsx 渲染、hook 的挂载和执行等，都在这个里面。
 
-从React18开始，`render()`方法的使用跟之前不一样了。
+从 React18 开始，`render()`方法的使用跟之前不一样了。
 
 之前的使用方式：
 
@@ -31,21 +31,18 @@ root.render(<App />);
 
 对比后，发现有几点不一样的使用方式：
 
-1. ReactDOM改成了从`react-dom/client`引入；
+1. ReactDOM 改成了从`react-dom/client`引入；
 2. render()方法的调用方改变了，从之前的 ReactDOM 变成了 ReactDOM.createRoot() 创建后的实例；
-3. render()方法的参数发生了改变，之前是2个固定参数加一个可选的callback，分别是jsx组件，dom节点和可选的callback，这个callback在dom渲染完毕后执行；新render()方法中，只有一个必传的参数，即jsx组件，若想实现之前的callback功能，这里建议使用useEffect()。
+3. render()方法的参数发生了改变，之前是 2 个固定参数加一个可选的 callback，分别是 jsx 组件，dom 节点和可选的 callback，这个 callback 在 dom 渲染完毕后执行；新 render()方法中，只有一个必传的参数，即 jsx 组件，若想实现之前的 callback 功能，这里建议使用 useEffect()。
 
 ## 2. createRoot()
 
 源码位置：[ReactDOMRoot.js#L185](https://github.com/wenzi0github/react/blob/6bef98a66fb9e05119d75bd44f7d0190758ed7f8/packages/react-dom/src/client/ReactDOMRoot.js#L185)。
 
-createRoot()函数有两个参数，第1个是传入一个dom节点，第2个是可选的配置参数，我们暂时先不管options的配置，先把这些配置代码删去，只看大流程。
+createRoot()函数有两个参数，第 1 个是传入一个 dom 节点，第 2 个是可选的配置参数，我们暂时先不管 options 的配置，先把这些配置代码删去，只看大流程。
 
 ```javascript
-export function createRoot(
-  container: Element | Document | DocumentFragment,
-  options?: CreateRootOptions,
-): RootType {
+export function createRoot(container: Element | Document | DocumentFragment, options?: CreateRootOptions): RootType {
   // 判断container是否是合法的dom元素
   if (!isValidContainer(container)) {
     throw new Error('createRoot(...): Target container is not a DOM element.');
@@ -59,7 +56,7 @@ export function createRoot(
   let identifierPrefix = '';
   let onRecoverableError = defaultOnRecoverableError;
   let transitionCallbacks = null;
-  
+
   /**
    * 创建一个 FiberRootNode 类型的节点，fiberRootNode 是整个应用的根节点
    * 在react的更新过程中，会有current(当前正在展示)和workInProgress(将要更新的)两个fiber树，
@@ -90,9 +87,7 @@ export function createRoot(
   // 获取container的真实element元素，若container是注释类型的元素，则使用其父级元素，否则直接使用container
   // 大概是因为注释节点无法挂载事件
   const rootContainerElement: Document | Element | DocumentFragment =
-    container.nodeType === COMMENT_NODE
-      ? (container.parentNode: any)
-      : container;
+    container.nodeType === COMMENT_NODE ? (container.parentNode: any) : container;
 
   // 绑定所有可支持的事件到 rootContainerElement 节点上
   listenToAllSupportedEvents(rootContainerElement);
@@ -105,22 +100,22 @@ export function createRoot(
 
 我们再提炼下其中的流程：
 
-1. isValidContainer(container): 判断传入的dom节点container是否是个合法的挂载对象，如普通的element节点（如<div>, <p>等），document节点，文档片段节点等，都是合法的挂载对象；额外的，注释节点就不是一个合法的挂载对象；
-2. warnIfReactDOMContainerInDEV(container): 若container为body或已被作为root使用过，则在dev环境发出警告；
+1. isValidContainer(container): 判断传入的 dom 节点 container 是否是个合法的挂载对象，如普通的 element 节点（如<div>, <p>等），document 节点，文档片段节点等，都是合法的挂载对象；额外的，注释节点就不是一个合法的挂载对象；
+2. warnIfReactDOMContainerInDEV(container): 若 container 为 body 或已被作为 root 使用过，则在 dev 环境发出警告；
 3. const root = createContainer(container): 创建一个 FiberRootNode 类型的节点，在 React 中，存在两棵树， FiberRootNode 用来决定指向到哪棵树；
-4. markContainerAsRoot(root.current, container): 将container标记上，若重复使用，则发出警告；
-5. listenToAllSupportedEvents(rootContainerElement): 挂载事件，若传入的container是注释类型元素，则使用其父级节点挂载事件；jsx中的诸如onClick, onChange等事件，并不是真的挂载当前节点上的，而是通过事件代理（又称事件委托）的方式，将事件冒泡到根节点上进行处理。
+4. markContainerAsRoot(root.current, container): 将 container 标记上，若重复使用，则发出警告；
+5. listenToAllSupportedEvents(rootContainerElement): 挂载事件，若传入的 container 是注释类型元素，则使用其父级节点挂载事件；jsx 中的诸如 onClick, onChange 等事件，并不是真的挂载当前节点上的，而是通过事件代理（又称事件委托）的方式，将事件冒泡到根节点上进行处理。
 6. new ReactDOMRoot(root): 最终返回一个 ReactDOMRoot(root) 的实例，render()方法就是这个类的一个实例；
 
 createContainer()
 
-上面的每个函数我们都没有去关注他具体的实现，只是先看下大致的流程，避免因太多深入某一项，导致忘记大局流程，造成思维混乱。我们可以看到上面的`createContainer()`函数的调用流程，各种函数的调用，若我们要弄懂每个函数的功能，并一直探到最终的FiberNode()函数，那render()方法的主要功能就已经忘得差不多了。
+上面的每个函数我们都没有去关注他具体的实现，只是先看下大致的流程，避免因太多深入某一项，导致忘记大局流程，造成思维混乱。我们可以看到上面的`createContainer()`函数的调用流程，各种函数的调用，若我们要弄懂每个函数的功能，并一直探到最终的 FiberNode()函数，那 render()方法的主要功能就已经忘得差不多了。
 
 ## 3. ReactDOMRoot() 类的实现
 
 ReactDOMRoot()类还是在当前的文件中：[ReactDOMRoot()的实现](https://github.com/wenzi0github/react/blob/6bef98a66fb9e05119d75bd44f7d0190758ed7f8/packages/react-dom/src/client/ReactDOMRoot.js#L93)。
 
-类的主体简单，就是将上层创建的 FiberRootNode 类型的节点放到实例的 _internalRoot 属性上。
+类的主体简单，就是将上层创建的 FiberRootNode 类型的节点放到实例的 \_internalRoot 属性上。
 
 ```javascript
 /**
@@ -138,9 +133,7 @@ function ReactDOMRoot(internalRoot: FiberRoot) {
  * element结构 { $$typeof, type, props, key, ref }
  * 不过这里如null, boolean等类型，也认为是有效的children类型
  */
-ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = function(
-  children: ReactNodeList,
-): void {};
+ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = function(children: ReactNodeList): void {};
 
 // 卸载
 ReactDOMHydrationRoot.prototype.unmount = ReactDOMRoot.prototype.unmount = function(): void {};
@@ -159,9 +152,7 @@ ReactDOMHydrationRoot.prototype.unmount = ReactDOMRoot.prototype.unmount = funct
  * element结构 { $$typeof, type, props, key, ref }
  * 不过这里如null, boolean等类型，也认为是有效的children类型
  */
-ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = function(
-  children: ReactNodeList,
-): void {
+ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = function(children: ReactNodeList): void {
   const root = this._internalRoot; // FiberRootNode
   if (root === null) {
     // 若root为null，说明该树已被卸载
@@ -169,14 +160,14 @@ ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = functio
   }
 
   // 省略一堆的参数校验
-  
+
   updateContainer(children, root, null, null);
 };
 ```
 
-updateContainer() 函数会做很多，如会将element结构转为fiber树，并最终生成html节点渲染到root.containerInfo指定的dom元素中；将组件中声明的hook挂载到hook链表中。
+updateContainer() 函数会做很多，如会将 element 结构转为 fiber 树，并最终生成 html 节点渲染到 root.containerInfo 指定的 dom 元素中；将组件中声明的 hook 挂载到 hook 链表中。
 
-我们再单独看下对参数的校验，这里不影响整体功能，您也可以直接跳过：
+我们现在再单独看下对参数的校验，这里不影响整体功能，您也可以直接跳过。这些参数的校验，主要是为了给使用之前版本的用户进行提示，毕竟很多开发者对框架的使用有很大的惯性，当 api 的使用方式有变动时，最好给到足够的提示，可以让用户知道怎么去适配最新的使用方式：
 
 ```javascript
 if (typeof arguments[1] === 'function') {
@@ -196,10 +187,7 @@ if (typeof arguments[1] === 'function') {
   );
 } else if (typeof arguments[1] !== 'undefined') {
   // root.render()只能传入一个参数
-  console.error(
-    'You passed a second argument to root.render(...) but it only accepts ' +
-      'one argument.',
-  );
+  console.error('You passed a second argument to root.render(...) but it only accepts ' + 'one argument.');
 }
 
 // 真实的dom元素
@@ -225,7 +213,7 @@ if (container.nodeType !== COMMENT_NODE) {
 
 ### 3.2 unmount() 方法
 
-unmount() 方法相对来说就简单很多，用来清除数据、卸载fiber树等。
+unmount() 方法相对来说就简单很多，主要是用来清除数据、卸载 fiber 树等。
 
 ```javascript
 ReactDOMHydrationRoot.prototype.unmount = ReactDOMRoot.prototype.unmount = function(): void {
@@ -262,5 +250,4 @@ ReactDOMHydrationRoot.prototype.unmount = ReactDOMRoot.prototype.unmount = funct
 
 ## 4. 总结
 
-入口方法 render() 我们初步的流程大致了解了，不过有很多重要的函数都没有展开说，如createContainer(), listenToAllSupportedEvents(), updateContainer()等等，接下来我们都会一一讲解到。
-
+入口方法 render() 我们初步的流程大致了解了，不过有很多重要的函数都没有展开说，如 createContainer(), listenToAllSupportedEvents(), updateContainer()等等，接下来我们都会一一讲解到。

@@ -150,6 +150,12 @@ function FiberNode(
    * 的render()方法；还是执行该type（当前是 Function Component），得到其返回值；
    */
   this.type = null;
+
+  /**
+   * 1. 若当前fiber节点是dom元素，则对应的是真实DOM元素；
+   * 2. 若当前是function component，则值为null；
+   * 3. 若当前是class component，则值为class初始化出来的实例
+   */
   this.stateNode = null;
 
   /**
