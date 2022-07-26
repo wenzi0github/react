@@ -621,7 +621,7 @@ function laneToIndex(lane: Lane) {
 }
 
 /**
- * 只要a和b任意一个赛道匹配的上，就可以
+ * 判断两个lanes是否有重合的lanes
  * @param a
  * @param b
  * @returns {boolean}
@@ -631,7 +631,7 @@ export function includesSomeLane(a: Lanes | Lane, b: Lanes | Lane) {
 }
 
 /**
- * 判断当前的set是否处于目标subset上，若满足这个条件，可以认为这个lane在对应的扯到区间中
+ * 判断set的lanes中是否有subset这个lanes，若满足这个条件，可以认为这个lane在对应的车道区间中
  * https://zhuanlan.zhihu.com/p/386897467
  * @param {Lanes} set
  * @param {Lane | Lanes} subset
@@ -654,6 +654,12 @@ export function mergeLanes(a: Lanes | Lane, b: Lanes | Lane): Lanes {
   return a | b; // |或操作：任意一个为1，则结果为1，1&1==1, 1&0==1, 0&0==0
 }
 
+/**
+ * 从set对应的lanes中，移除subset指定的lanes，然后返回剩余的lanes
+ * @param {Lanes} set
+ * @param {Lanes | Lane} subset
+ * @returns {Lanes}
+ */
 export function removeLanes(set: Lanes, subset: Lanes | Lane): Lanes {
   return set & ~subset;
 }
@@ -724,6 +730,15 @@ export function markRootSuspended(root: FiberRoot, suspendedLanes: Lanes) {
   let lanes = suspendedLanes;
   while (lanes > 0) {
     const index = pickArbitraryLaneIndex(lanes);
+
+    /**
+     * 通过index将其转为这个位置独有的lane，因为这里的index是从0计数的，因此要左移一位，
+     * 才是真正对应上的lane。
+     * 如lanes的值是 110110，这里我们暂时忽略所有的前置0，
+     * 通过 pickArbitraryLaneIndex(lanes) 得到的index为5，
+     * 数字1的左移5位，得到的二进制是100000，即正好是这个最左边的1的lane
+     * 然后执行 lanes &= ~lane 操作后，可以将这个位置的lane去掉
+     */
     const lane = 1 << index;
 
     expirationTimes[index] = NoTimestamp;
