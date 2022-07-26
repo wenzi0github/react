@@ -462,10 +462,17 @@ export function getCurrentTime() {
   return now();
 }
 
+/**
+ * 获取当前fiber节点的lane优先级
+ * @param fiber
+ * @returns {Lanes|Lane}
+ */
 export function requestUpdateLane(fiber: Fiber): Lane {
   // Special cases
+  // 获取到当前渲染的模式：sync mode（同步模式） 或 concurrent mode（并发模式）
   const mode = fiber.mode;
   if ((mode & ConcurrentMode) === NoMode) {
+    // 检查当前渲染模式是不是并发模式，等于NoMode表示不是，则使用同步模式渲染
     return (SyncLane: Lane);
   } else if (
     !deferRenderPhaseUpdateToNextBatch &&
@@ -481,9 +488,21 @@ export function requestUpdateLane(fiber: Fiber): Lane {
     // This behavior is only a fallback. The flag only exists until we can roll
     // out the setState warning, since existing code might accidentally rely on
     // the current behavior.
+    // workInProgressRootRenderLanes是在任务执行阶段赋予的需要更新的fiber节点上的lane的值
+    // 当新的更新任务产生时，workInProgressRootRenderLanes不为空，则表示有任务正在执行
+    // 那么则直接返回这个正在执行的任务的lane，那么当前新的任务则会和现有的任务进行一次批量更新
     return pickArbitraryLane(workInProgressRootRenderLanes);
   }
 
+  // 检查当前事件是否是过渡优先级
+  // 如果是的话，则返回一个过渡优先级
+  // 过渡优先级的分配规则：
+  // 产生的任务A给它分配为TransitionLanes的第一位：TransitionLane1 = 0b0000000000000000000000001000000
+  // 现在又产生了任务B，那么则从A的位置向左移动一位： TransitionLane2 = 0b0000000000000000000000010000000
+  // 后续产生的任务则会一次向后移动，直到移动到最后一位
+  // 过渡优先级共有16位:                         TransitionLanes = 0b0000000001111111111111111000000
+  // 当所有位都使用完后，则又从第一位开始赋予事件过渡优先级
+  // 链接：https://juejin.cn/post/7008802041602506765
   const isTransition = requestCurrentTransition() !== NoTransition;
   if (isTransition) {
     if (__DEV__ && ReactCurrentBatchConfig.transition !== null) {
@@ -514,6 +533,7 @@ export function requestUpdateLane(fiber: Fiber): Lane {
   // The opaque type returned by the host config is internally a lane, so we can
   // use that directly.
   // TODO: Move this type conversion to the event priority module.
+  // 在react的内部事件中触发的更新事件，比如：onClick等，会在触发事件的时候为当前事件设置一个优先级，可以直接拿来使用
   const updateLane: Lane = (getCurrentUpdatePriority(): any);
   if (updateLane !== NoLane) {
     return updateLane;
@@ -525,6 +545,7 @@ export function requestUpdateLane(fiber: Fiber): Lane {
   // The opaque type returned by the host config is internally a lane, so we can
   // use that directly.
   // TODO: Move this type conversion to the event priority module.
+  // 在react的外部事件中触发的更新事件，比如：setTimeout等，会在触发事件的时候为当前事件设置一个优先级，可以直接拿来使用
   const eventLane: Lane = (getCurrentEventPriority(): any);
   return eventLane;
 }
@@ -565,7 +586,7 @@ export function scheduleUpdateOnFiber(
   }
 
   /**
-   * 当前fiber节点添加传入 lane 优先级，并将父级节点到根节点的childLanes添加lane，最后返回该HostRoot节点，
+   * 当前fiber节点添加传入 lane 优先级，并将父级节点到根节点的childLanes添加lane，表明有子节点需要更新，最后返回该HostRoot节点，
    * 若HostRoot节点为null，则直接返回
    * 不过在执行render()初始化时，fiber节点本身就是HostRoot节点
    */
@@ -581,6 +602,8 @@ export function scheduleUpdateOnFiber(
   }
 
   // Mark that the root has a pending update.
+  // 将当前需要更新的lane添加到fiber root的pendingLanes属性上，表示有新的更新任务需要被执行
+  // 通过计算出当前lane的位置，并添加事件触发时间到eventTimes中
   markRootUpdated(root, lane, eventTime);
 
   if (
@@ -818,7 +841,9 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
 
   // Check if any lanes are being starved by other work. If so, mark them as
   // expired so we know to work on those next.
-  // 将饥饿的车道标记为已过期
+  // 为当前任务根据优先级添加过期时间
+  // 并检查未执行的任务中是否有任务过期，有任务过期则expiredLanes中添加该任务的lane
+  // 在后续任务执行中以同步模式执行，避免饥饿问题
   markStarvedLanesAsExpired(root, currentTime);
 
   // Determine the next lanes to work on, and their priority.
@@ -828,9 +853,15 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
     root === workInProgressRoot ? workInProgressRootRenderLanes : NoLanes,
   );
 
+  // 如果nextLanes为空则表示没有任务需要执行，则直接中断更新
   if (nextLanes === NoLanes) {
     // Special case: There's nothing to work on.
+    // existingCallbackNode不为空表示有任务使用了concurrent模式被scheduler调用，但是还未执行
+    // nextLanes为空了则表示没有任务了，就算这个任务执行了但是也做不了任何更新，所以需要取消掉
     if (existingCallbackNode !== null) {
+      // 使用cancelCallback会将任务的callback置为null
+      // 在scheduler循环taskQueue时，会检查当前task的callback是否为null
+      // 为null则从taskQueue中删除，不会执行
       cancelCallback(existingCallbackNode);
     }
     root.callbackNode = null;
@@ -868,19 +899,26 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
       }
     }
     // The priority hasn't changed. We can reuse the existing task. Exit.
+    // 若新任务的优先级与现有任务的优先级一样，那么则会中断当前新任务向下的执行，重(chong)用之前现有的任务
     return;
   }
 
+  // 新任务的优先级大于现有的任务优先级
+  // 取消现有的任务的执行
   if (existingCallbackNode != null) {
     // Cancel the existing callback. We'll schedule a new one below.
     cancelCallback(existingCallbackNode);
   }
 
   // Schedule a new callback.
+  // 开始调度任务
+  // 判断新任务的优先级是否是同步优先级
+  // 是则使用同步渲染模式，否则使用并发渲染模式（时间分片）
   let newCallbackNode;
   if (newCallbackPriority === SyncLane) {
     // Special case: Sync React callbacks are scheduled on a special
     // internal queue
+    // 同步优先级
     if (root.tag === LegacyRoot) {
       if (__DEV__ && ReactCurrentActQueue.isBatchingLegacy !== null) {
         ReactCurrentActQueue.didScheduleLegacyUpdate = true;
@@ -918,6 +956,9 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
     }
     newCallbackNode = null;
   } else {
+    /**
+     * lanes优先级转为事件优先级，然后再根据事件的优先级转为Scheduler的优先级
+     */
     let schedulerPriorityLevel;
     switch (lanesToEventPriority(nextLanes)) {
       case DiscreteEventPriority:

@@ -1,4 +1,4 @@
-# React18 源码解析之解析阶段
+# React18 源码解析之不同的阶段
 
 > 我们解析的源码是 React18.1.0 版本，请注意版本号。React 源码学习的 GitHub 仓库地址：[https://github.com/wenzi0github/react](https://github.com/wenzi0github/react)。
 
@@ -19,6 +19,8 @@ React 中主要会经历 3 个阶段：
 3. commit 阶段：按照新整理出来的变动链表进行最小化的更新；这个阶段是不能中断的；
 
 ## 1. schedule 阶段
+
+![不同的任务](https://mat1.gtimg.com/qqcdn/tupload/1658803041158.png)
 
 ## 2. render 阶段
 

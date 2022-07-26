@@ -407,6 +407,13 @@ export function findInstanceBlockingEvent(
   return null;
 }
 
+/**
+ * 获取某事件类型的优先级
+ * 1. 像click, input, change等事件的优先级是DiscreteEventPriority（离散事件优先级），即最高优先级；
+ * 2. 如drag, mousemove等事件的优先级是ContinuousEventPriority（连续事件优先级），处于第2高优先级；
+ * @param {DOMEventName} domEventName
+ * @returns {EventPriority}
+ */
 export function getEventPriority(domEventName: DOMEventName): * {
   switch (domEventName) {
     // Used by SimpleEventPlugin:

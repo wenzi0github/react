@@ -9,11 +9,6 @@
 /**
  * https://github.com/facebook/react/pull/18796
  * 使用Lane机制代替 expirationTimes机制，来决定（谁的？）优先级
- *
- * https://github.com/zepang/web-clipper-articles/issues/27
- * 1. 创建fiber时，每一个 fiber 创建的时候其 lanes，childLanes 字段都被初始化为NoLanes；
- * 2. 创建update时，
- * 3. 更新过程中对fiber上各个字段的更新
  */
 import type {FiberRoot} from './ReactInternalTypes';
 import type {Transition} from './ReactFiberTracingMarkerComponent.old';
@@ -58,9 +53,11 @@ export const SyncLane: Lane = /*                        */ 0b0000000000000000000
 export const InputContinuousHydrationLane: Lane = /*    */ 0b0000000000000000000000000000010;
 export const InputContinuousLane: Lane = /*             */ 0b0000000000000000000000000000100;
 
+// 默认优先级
 export const DefaultHydrationLane: Lane = /*            */ 0b0000000000000000000000000001000;
 export const DefaultLane: Lane = /*                     */ 0b0000000000000000000000000010000;
 
+// 过度优先级，例如: Suspense、useTransition、useDeferredValue等拥有的优先级
 const TransitionHydrationLane: Lane = /*                */ 0b0000000000000000000000000100000;
 const TransitionLanes: Lanes = /*                       */ 0b0000000001111111111111111000000;
 const TransitionLane1: Lane = /*                        */ 0b0000000000000000000000001000000;
@@ -91,6 +88,7 @@ export const SomeRetryLane: Lane = RetryLane1;
 
 export const SelectiveHydrationLane: Lane = /*          */ 0b0001000000000000000000000000000;
 
+// 未闲置的任务
 const NonIdleLanes: Lanes = /*                          */ 0b0001111111111111111111111111111;
 
 export const IdleHydrationLane: Lane = /*               */ 0b0010000000000000000000000000000;
@@ -206,6 +204,7 @@ export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
   // Early bailout if there's no pending work left.
   const pendingLanes = root.pendingLanes;
   if (pendingLanes === NoLanes) {
+    // 没有需要更新的任务，直接结束
     return NoLanes;
   }
 
@@ -216,12 +215,17 @@ export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
 
   // Do not work on any idle work until all the non-idle work has finished,
   // even if the work is suspended.
+  // 先判断是否有未闲置的任务，闲置任务的优先级比较低，我们一会儿处理，这里先处理未闲置的任务
   const nonIdlePendingLanes = pendingLanes & NonIdleLanes;
   if (nonIdlePendingLanes !== NoLanes) {
+    // 有未闲置的任务，这里再去除掉 suspendedLanes 挂起类型的任务
+    // 从这些未被阻塞的任务中找出任务优先级最高的去执行
     const nonIdleUnblockedLanes = nonIdlePendingLanes & ~suspendedLanes;
     if (nonIdleUnblockedLanes !== NoLanes) {
       nextLanes = getHighestPriorityLanes(nonIdleUnblockedLanes);
     } else {
+      // 若 nonIdlePendingLanes 排除掉挂起的任务后为空，说明剩下的都是挂起的任务
+      // 这里从挂起的任务里，找一个优先级最高的
       const nonIdlePingedLanes = nonIdlePendingLanes & pingedLanes;
       if (nonIdlePingedLanes !== NoLanes) {
         nextLanes = getHighestPriorityLanes(nonIdlePingedLanes);
@@ -229,16 +233,20 @@ export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
     }
   } else {
     // The only remaining work is Idle.
+    // 剩下的都是闲置的任务
+    // 找出未被阻塞的任务，从这里面找出优先级最高的
     const unblockedLanes = pendingLanes & ~suspendedLanes;
     if (unblockedLanes !== NoLanes) {
       nextLanes = getHighestPriorityLanes(unblockedLanes);
     } else {
+      // 从挂起的任务中找出优先级最高的
       if (pingedLanes !== NoLanes) {
         nextLanes = getHighestPriorityLanes(pingedLanes);
       }
     }
   }
 
+  // 从pendingLanes中找不到有任务，则返回一个空
   if (nextLanes === NoLanes) {
     // This should only be reachable if we're suspended
     // TODO: Consider warning in this path if a fallback timer is not scheduled.
@@ -248,6 +256,12 @@ export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
   // If we're already in the middle of a render, switching lanes will interrupt
   // it and we'll lose our progress. We should only do this if the new lanes are
   // higher priority.
+  /**
+   * 若从上面找到了nextLanes，则与当前正在执行多任务进行对比，
+   * wipLanes表示正在执行任务的lane，nextLanes是本次需要执行任务的lane，
+   * 若新任务比正在执行的任务的优先级低，则不用管他，继续执行即可；
+   * 若新任务比正在执行的优先级高，则取消当前任务，先执行新任务；
+   */
   if (
     wipLanes !== NoLanes &&
     wipLanes !== nextLanes &&
@@ -257,6 +271,10 @@ export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
   ) {
     const nextLane = getHighestPriorityLane(nextLanes);
     const wipLane = getHighestPriorityLane(wipLanes);
+
+    /**
+     * 在二进制中，1越靠左，数字越大，但优先级越低，若数字上比较，nextLane >= wipLane，说明nextLane优先级更低
+     */
     if (
       // Tests whether the next lane is equal or lower priority than the wip
       // one. This works because the bits decrease in priority as you go left.
@@ -404,6 +422,12 @@ function computeExpirationTime(lane: Lane, currentTime: number) {
   }
 }
 
+/**
+ * 为当前任务根据优先级添加过期时间，并检查未执行的任务中是否有任务过期，
+ * 有任务过期则在expiredLanes中添加该任务的lane，在后续该任务的执行中以同步模式执行，避免饥饿问题
+ * @param root
+ * @param currentTime
+ */
 export function markStarvedLanesAsExpired(
   root: FiberRoot,
   currentTime: number,
@@ -425,11 +449,14 @@ export function markStarvedLanesAsExpired(
     const index = pickArbitraryLaneIndex(lanes);
     const lane = 1 << index;
 
+    // 获取当前位置上任务的过期时间，如果没有则会根据任务的优先级创建一个过期时间
+    // 如果有则会判断任务是否过期，过期了则会将当前任务的lane添加到expiredLanes上
     const expirationTime = expirationTimes[index];
     if (expirationTime === NoTimestamp) {
       // Found a pending lane with no expiration time. If it's not suspended, or
       // if it's pinged, assume it's CPU-bound. Compute a new expiration time
       // using the current time.
+      // 若当前没有过期时间，则根据lane的优先级生成一个过期时间
       if (
         (lane & suspendedLanes) === NoLanes ||
         (lane & pingedLanes) !== NoLanes
@@ -439,9 +466,20 @@ export function markStarvedLanesAsExpired(
       }
     } else if (expirationTime <= currentTime) {
       // This lane expired
+      // 该更新任务已更新，将其添加到过期队列中
       root.expiredLanes |= lane;
     }
 
+    /**
+     * 从lanes中，将lane去掉
+     * lanes = lanes & (~lane)
+     * 如 lanes = 28 = 11100
+     * lane = 16 = 10000
+     * ~lane =     01111
+     * lanes & (~lane) 即 11100 & 01111
+     * 得到 01100 ，与上面的lanes对比，发现已将10000的任务去掉
+     * lanes中所有的任务都删除后，循环结束
+     */
     lanes &= ~lane;
   }
 }
@@ -533,19 +571,48 @@ export function claimNextRetryLane(): Lane {
   return lane;
 }
 
+/**
+ * 获取lanes中最高优先级的那个数，即最右边的那个1
+ * 在位运算中，若有负数，则使用该负数的补码参与运算，
+ * 位运算的文档：https://www.cnblogs.com/CoutCodes/p/12557649.html
+ * 如lanes = 5 = 101 源码
+ * -lanes = -5 = 011 补码
+ * lanes & -lanes = 101 & 011 = 1
+ * 即最右边的1代表的那个数字
+ * @param lanes
+ * @returns {number}
+ */
 export function getHighestPriorityLane(lanes: Lanes): Lane {
   return lanes & -lanes;
 }
 
+/**
+ * 选取lanes中的任意一条赛道
+ * @param lanes
+ * @returns {Lane}
+ */
 export function pickArbitraryLane(lanes: Lanes): Lane {
   // This wrapper function gets inlined. Only exists so to communicate that it
   // doesn't matter which bit is selected; you can pick any bit without
   // affecting the algorithms where its used. Here I'm using
   // getHighestPriorityLane because it requires the fewest operations.
+  /**
+   * 这个包装器函数被内联。只存在于通信中，因此选择哪个位无关紧要；您可以选择任何位，
+   * 而不影响其使用的算法。这里我使用getHighestPriorityLane，因为它需要最少的操作。
+   */
   return getHighestPriorityLane(lanes);
 }
 
+/**
+ * 从右往左，从0开始数，获取lane中最左边的1的位置
+ * 如 lanes = 28 = 0b0000000000000000000000000011100
+ * 结果为4
+ * @param lanes
+ * @returns {number}
+ */
 function pickArbitraryLaneIndex(lanes: Lanes) {
+  // clz32()是将数字转为32位无符号的二进制，开头的0的个数
+  // 我们的lanes的总长度为31位，两者相减即得到最左边的1的位置
   return 31 - clz32(lanes);
 }
 
@@ -640,6 +707,7 @@ export function markRootUpdated(
     root.pingedLanes = NoLanes;
   }
 
+  // root.eventTimes和root.lanes两个数组一一对应，-1表示空位，非-1的位置和lane中1的位置相同
   const eventTimes = root.eventTimes;
   const index = laneToIndex(updateLane);
   // We can always overwrite an existing timestamp because we prefer the most
