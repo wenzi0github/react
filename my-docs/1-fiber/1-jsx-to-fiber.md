@@ -1,10 +1,10 @@
-# jsx如何转为fiber结构
+# React18 源码解析之 fiber 等数据结构
 
-我们稍微了解下React中的几个结构。 我们这里仅了解其中的转换过程，后续我们再了解两棵fiber树是如何进行对比的。
+> 我们解析的源码是 React18.1.0 版本，请注意版本号。React 源码学习的 GitHub 仓库地址：[https://github.com/wenzi0github/react](https://github.com/wenzi0github/react)。
 
-## 1. 几个重要的数据结构
+我们稍微了解下 React 中的几个结构。 我们这里仅了解其中的转换过程，后续我们再了解两棵 fiber 树是如何进行对比的。
 
-### 1.1 什么是 jsx
+## 1. jsx 结构
 
 我们在 React 中写的类似于 html 的结构就被称为 JSX，但他并不是 html，而是一个 JavaScript 的语法扩展。即他是 js，而不是 html。
 
@@ -27,7 +27,9 @@ const App = () => {
 };
 ```
 
-这里我们不讲解 jsx 的使用方式，主要说下 JSX 的作用。jsx 是 js 的语法糖，方便我们开发者的维护。最后实际上会被 React(React16.x 及之前)或 babel 编译(React17.0 及更新)成用 createElement 编译的结构。
+不过这里我们不深入 jsx 的使用方式，主要说下 JSX 的作用。jsx 是 js 的语法糖，方便我们开发者的维护。最后实际上会被 React(React16.x 及之前)或 babel 编译(React17.0 及更新)成用 createElement 编译的结构。
+
+一开始我写 jsx 时也不太习惯，觉得把逻辑和模板混合到一起太乱了，还是 Vue 中的模板+逻辑+样式的组合更好。后来写多了以后，发现 jsx 其实也挺香的，比如它没有额外语法糖的记忆，各种语法跟 js 本身就很像；同时，因为 typescript 给开的后门，jsx 对 ts 的支持程度很高。而且 React 中并不是用文件来分割组件的，我们可以在一个文件里，编写多个组件。
 
 同样的，我们在 React 中像下面这样写的效果是一样的：
 
@@ -37,7 +39,7 @@ createElement('div', { onClick: handleClick }, createElement('p', null, 'hello w
 
 但这种方式使用起来确实不方便。
 
-### 1.2 element结构
+## 2. element 结构
 
 上面提到会将 jsx 编译成由 createElement()函数组成的一个嵌套结果。那么 createElement 里具体都干了什么呢？
 
@@ -211,7 +213,7 @@ const ReactElement = function(type, key, ref, self, source, owner, props) {
 
 上面方法注释的大概意思是：现在不再使用类的方式 new 出一个实例来，因此不再使用 instanceOf 来判断是否是 React 元素；而是判断 `$$typeof` 字段是否等于`Symbol.for('react.element')`来判断。
 
-我们已经知道 `$$typeof` 字段的作用是为了标识 React 元素的，但他的值为什么用 Symbol 类型呢？可以参考这篇文章：[为什么React元素有一个$$typeof属性？](https://overreacted.io/zh-hans/why-do-react-elements-have-typeof-property/)
+我们已经知道 `$$typeof` 字段的作用是为了标识 React 元素的，但他的值为什么用 Symbol 类型呢？可以参考这篇文章：[为什么 React 元素有一个\$\$typeof 属性？](https://overreacted.io/zh-hans/why-do-react-elements-have-typeof-property/)
 
 到目前位置，我们已经知道了 jsx 在传入 render()方法之前，会编译成什么样子。
 
@@ -290,7 +292,7 @@ const Start = (
 
 因此，在传入到 render()方法时，就是这样子的一个 object 类型的 element 结构的元素。
 
-### 1.3 fiber结构
+## 3. fiber 结构
 
 在上面通过 babel 转换后的 element 结构的数据，会在 render()方法中的某个阶段将其转为 fiber 结构。render()方法里具体怎样转换的，我们稍后再讲，这里我们只是看下 fiber 节点的结构。
 
@@ -376,6 +378,41 @@ function FiberNode(tag: WorkTag, pendingProps: mixed, key: null | string, mode: 
 
 React 中大到组件，小到 html 标签，都会转为 fiber 节点构建的 fiber 链表。
 
-## 2. 转换过程
+## 4. 为什么要使用 fiber 结构
 
+为什么要使用 fiber 链表？这里我们稍微了解下，后面会详细介绍 fiber 链表如何进行 diff 每个 fiber 节点的。
 
+### 4.1 Stack Reconciler
+
+在 React 15.x 版本以及之前的版本，Reconciliation 算法采用了栈调和器（ Stack Reconciler ）来实现，但是这个时期的栈调和器存在一些缺陷：不能暂停渲染任务，不能切分任务，无法有效平衡组件更新渲染与动画相关任务的执行顺序，即不能划分任务的优先级（这样有可能导致重要任务卡顿、动画掉帧等问题）。Stack Reconciler 的实现。
+
+### 4.2 Fiber Reconciler
+
+为了解决 Stack Reconciler 中固有的问题，以及一些历史遗留问题，在 React 16 版本推出了新的 Reconciliation 算法的调和器—— Fiber 调和器（Fiber Reconciler）来替代栈调和器。Fiber Reconciler 将会利用调度器（Scheduler）来帮忙处理组件渲染/更新的工作。此外，引入 fiber 这个概念后，原来的 react element tree 有了一棵对应的 fiber node tree。在 diff 两棵 react element tree 的差异时，Fiber Reconciler 会基于 fiber node tree 来使用 diff 算法，通过 fiber node 的 return、child、sibling 属性能更方便的遍历 fiber node tree，从而更高效地完成 diff 算法。
+
+fiber 调度的优点：
+
+1. 能够把可中断的任务切片处理;
+2. 能够调整任务优先级，重置并复用任务；
+3. 可以在父子组件任务间前进后退切换任务；
+4. render 方法可以返回多个元素（即可以返回数组）；
+5. 支持异常边界处理异常；
+
+## 5. 总结
+
+fiber 结构是 React 整体的一个基础，两棵状态树的 遍历、diff 对比，任务优先级的判断等，都是基于 fiber 结构来实现的。
+
+其实我们在上面的讲解中，已经解决了几个常见的问题，如：
+
+### 5.1 为什么 React17 需要显式地引入 React，而之后不用了？
+
+这是因为在 React17 之前，createElement() 方法是在放在 React 中的，只要涉及到 jsx 的，都需要引入 React，才能使用该方法。而从 React17 开始，修改了 jsx 的编译方式。
+
+### 5.2 Virtual Dom 是什么？
+
+这里我们介绍了 3 种数据结构，那么 React 中说的虚拟 DOM（Virtual DOM）指的是哪一个呢？
+
+实际上指的是 element 这个数据结构，用 js 对象描述真实 dom 的 js 对象。
+
+- 优点：处理了浏览器的兼容性，防范 xss 攻击，跨平台，差异化更新，减少更新的 dom 操作；
+- 缺点：额外的内存，初次渲染不一定快；因为要进行后续一系列的构建、hooks 的搭建等，才会渲染 DOM；会比直接操作 DOM 要慢一些；
