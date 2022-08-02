@@ -39,6 +39,8 @@ createElement('div', { onClick: handleClick }, createElement('p', null, 'hello w
 
 但这种方式使用起来确实不方便。
 
+![](https://www.xiabingbao.com/upload/707062e93825b6895.png)
+
 ## 2. element 结构
 
 上面提到会将 jsx 编译成由 createElement()函数组成的一个嵌套结果。那么 createElement 里具体都干了什么呢？
@@ -292,6 +294,8 @@ const Start = (
 
 因此，在传入到 render()方法时，就是这样子的一个 object 类型的 element 结构的元素。
 
+![有点膨胀](https://www.xiabingbao.com/upload/366062e9385e328d5.png)
+
 ## 3. fiber 结构
 
 在上面通过 babel 转换后的 element 结构的数据，会在 render()方法中的某个阶段将其转为 fiber 结构。render()方法里具体怎样转换的，我们稍后再讲，这里我们只是看下 fiber 节点的结构。
@@ -378,6 +382,8 @@ function FiberNode(tag: WorkTag, pendingProps: mixed, key: null | string, mode: 
 
 React 中大到组件，小到 html 标签，都会转为 fiber 节点构建的 fiber 链表。
 
+![阿欧](https://www.xiabingbao.com/upload/831862e938a789a63.jpeg)
+
 ## 4. 为什么要使用 fiber 结构
 
 为什么要使用 fiber 链表？这里我们稍微了解下，后面会详细介绍 fiber 链表如何进行 diff 每个 fiber 节点的。
@@ -397,6 +403,8 @@ fiber 调度的优点：
 3. 可以在父子组件任务间前进后退切换任务；
 4. render 方法可以返回多个元素（即可以返回数组）；
 5. 支持异常边界处理异常；
+
+![大胆的想法](https://www.xiabingbao.com/upload/500862e93a00b0033.png)
 
 ## 5. 总结
 
