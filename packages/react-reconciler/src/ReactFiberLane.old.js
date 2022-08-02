@@ -510,9 +510,20 @@ export function includesSyncLane(lanes: Lanes) {
   return (lanes & SyncLane) !== NoLanes;
 }
 
+/**
+ * 判断lanes中是否有未闲置的任务
+ * @param lanes
+ * @returns {boolean}
+ */
 export function includesNonIdleWork(lanes: Lanes) {
   return (lanes & NonIdleLanes) !== NoLanes;
 }
+
+/**
+ * 判断lanes中是否只包含重试任务
+ * @param lanes
+ * @returns {boolean}
+ */
 export function includesOnlyRetries(lanes: Lanes) {
   return (lanes & RetryLanes) === lanes;
 }
@@ -632,13 +643,12 @@ export function includesSomeLane(a: Lanes | Lane, b: Lanes | Lane) {
 
 /**
  * 判断set的lanes中是否有subset这个lanes，若满足这个条件，可以认为这个lane在对应的车道区间中
- * https://zhuanlan.zhihu.com/p/386897467
  * @param {Lanes} set
  * @param {Lane | Lanes} subset
  * @returns {boolean}
  */
 export function isSubsetOfLanes(set: Lanes, subset: Lanes | Lane) {
-  return (set & subset) === subset; // &与操作： 只有都是1时，才会得到1，1&1==1, 1&0==0, 0&0==0
+  return (set & subset) === subset;
 }
 
 /**
