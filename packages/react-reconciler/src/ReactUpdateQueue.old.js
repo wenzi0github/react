@@ -182,6 +182,11 @@ export function initializeUpdateQueue<State>(fiber: Fiber): void {
   fiber.updateQueue = queue;
 }
 
+/**
+ * 将current中updateQueue属性中的字段给到workInProgress
+ * @param current
+ * @param workInProgress
+ */
 export function cloneUpdateQueue<State>(
   current: Fiber,
   workInProgress: Fiber,

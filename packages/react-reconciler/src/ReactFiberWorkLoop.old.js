@@ -2044,6 +2044,8 @@ function performUnitOfWork(unitOfWork: Fiber): void {
      * current为当前树的那个fiber节点
      * unitOfWork为 更新树 的那个fiber节点
      * 在初始mount节点，current和unitOfWork都是fiberRoot节点
+     * 在第一次调用beginWork()时，element结构通过其一系列的流程，创建出了第一个fiber节点，即<App />对应的fiber节点（我们假设<App /> 是最外层的元素）
+     * next就是第一个fiber节点，然后next给到workInProgress，接着下一个循环
      */
     next = beginWork(current, unitOfWork, subtreeRenderLanes);
   }

@@ -533,8 +533,19 @@ export function createHostRootFiber(
   return createFiber(HostRoot, null, null, mode);
 }
 
+/**
+ * 根据type和props创建fiber节点
+ * 该方法在 createFiberFromElement() 有调用
+ * @param type
+ * @param key
+ * @param pendingProps
+ * @param owner
+ * @param mode
+ * @param lanes
+ * @returns {Fiber}
+ */
 export function createFiberFromTypeAndProps(
-  type: any, // React$ElementType
+  type: any, // React$ElementType，element的类型
   key: null | string,
   pendingProps: any,
   owner: null | Fiber,
@@ -546,19 +557,24 @@ export function createFiberFromTypeAndProps(
   // 如果我们知道最终类型type将是什么，则设置解析的类型。
   let resolvedType = type;
   if (typeof type === 'function') {
+    // 当前是函数组件或类组件
     if (shouldConstruct(type)) {
+      // 类组件
       fiberTag = ClassComponent;
       if (__DEV__) {
         resolvedType = resolveClassForHotReloading(resolvedType);
       }
     } else {
+      // 函数组件，啥也没干
       if (__DEV__) {
         resolvedType = resolveFunctionForHotReloading(resolvedType);
       }
     }
   } else if (typeof type === 'string') {
+    // type是普通的html标签，如div, p, span等
     fiberTag = HostComponent;
   } else {
+    // 其他类型，如fragment, strictMode等
     getTag: switch (type) {
       case REACT_FRAGMENT_TYPE:
         return createFiberFromFragment(pendingProps.children, mode, lanes, key);
@@ -658,6 +674,7 @@ export function createFiberFromTypeAndProps(
     }
   }
 
+  // 通过上面的判断，得到fiber的类型后，则调用createFiber()函数，生成fiber节点
   const fiber = createFiber(fiberTag, pendingProps, key, mode);
   fiber.elementType = type;
   fiber.type = resolvedType;
@@ -670,6 +687,14 @@ export function createFiberFromTypeAndProps(
   return fiber;
 }
 
+/**
+ * 通过element结构创建fiber节点，并形成fiber树
+ * element结构和fiber结构，可以查看这篇文章：https://www.xiabingbao.com/post/react/jsx-element-fiber-rfztfs.html
+ * @param {ReactElement} element
+ * @param {TypeOfMode} mode
+ * @param lanes
+ * @returns {Fiber}
+ */
 export function createFiberFromElement(
   element: ReactElement,
   mode: TypeOfMode,
@@ -679,9 +704,18 @@ export function createFiberFromElement(
   if (__DEV__) {
     owner = element._owner;
   }
+
+  /**
+   * 我们的节点有有三种类型：
+   * 1. 普通的html标签，type为该标签的tagName，如div, span等；
+   * 2. 当前是Function Component节点时，则type该组件的函数体，即可以执行type()；
+   * 3. 当前是Class Component节点，则type为该class，可以通过该type，new出一个实例；
+   * 而type对应的是Function Component时，可以给该组件添加defaultProps属性，
+   * 当设置了defaultProps，则将未明确传入的属性给到props里
+   */
   const type = element.type;
-  const key = element.key;
-  const pendingProps = element.props;
+  const key = element.key; // 可以手动设置key，若不设置的话，默认是索引，不过还是主动设置
+  const pendingProps = element.props; // jsx上所有的属性（如className, id, children等）都是props，key不是，key单独拿出来了
   const fiber = createFiberFromTypeAndProps(
     type,
     key,

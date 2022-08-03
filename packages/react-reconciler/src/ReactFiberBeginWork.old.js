@@ -286,7 +286,7 @@ if (__DEV__) {
 
 /**
  * 调和，创建或更新fiber树
- * 若current为null，说明当前没有正在展示的树，说明应当执行初始化，调用 mountChildFibers
+ * 若current的fiber节点为null，调用 mountChildFibers 初始化
  * 若current不为空，说明要得到一棵新的fiber树，执行 reconcileChildFibers() 方法
  * @param current
  * @param workInProgress
@@ -314,6 +314,13 @@ export function reconcileChildren(
       renderLanes,
     );
   } else {
+    /**
+     * 若current子项与 workInProgress 中的一样，则意味着我们尚未开始对这些子项进行任何工作。
+     * 因此，我们使用克隆算法创建所有当前子级的副本。
+     *
+     * 如果我们已经有任何进展的工作，这在这一点上是无效的，所以让我们把它扔掉。
+     * 初始render()的逻辑会走到这里，因为初始时，current指向的是fiber的根节点，肯定不为null
+     */
     // If the current child is the same as the work in progress, it means that
     // we haven't yet started any work on these children. Therefore, we use
     // the clone algorithm to create a copy of all the current children.
@@ -1317,6 +1324,13 @@ function updateHostRoot(current, workInProgress, renderLanes) {
   const prevState = workInProgress.memoizedState;
   const prevChildren = prevState.element;
   cloneUpdateQueue(current, workInProgress);
+
+  /**
+   * current.updateQueue.shared.pending = sharedQueue， element结构在sharedQueue其中的一个update节点，
+   * 其实这里只有一个update节点
+   * pushRootTransition()函数其中一个作用是将 workInProgress 中 updateQueue.shared.pending 指向的双向链表，
+   * 改为单项链表，放到workInProgress.updateQueue.firstBaseUpdate中
+   */
   processUpdateQueue(workInProgress, nextProps, null, renderLanes);
 
   const nextState: RootState = workInProgress.memoizedState;
