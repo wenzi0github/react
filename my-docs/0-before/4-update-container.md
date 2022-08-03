@@ -15,7 +15,7 @@ ReactDOMRoot.prototype.render = function(
 
 由此可知 updateContainer 一共接收了4个参数，后两个参数为null：
 
-* 第1个参数是通过createElement()构建出来的element结构，即<App />；
+* 第1个参数是通过 createElement() 构建出来的element结构，即<App />；
 * 第2个参数是整个应用的根节点，即FiberRootNode节点；
 
 如果忘记了，我们再来复习下element的结构：

@@ -445,6 +445,8 @@ export function updateContainer(
   /**
    * 这里传入的current是HostRootFiber的fiber节点了，虽然他的下面没有其他fiber子节点，
    * 但它的updateQueue上有element结构，可以用来构建fiber节点
+   * 即 current.updateQueue.shared.pending = sharedQueue， element结构在sharedQueue其中的一个update节点，
+   * 其实这里只有一个update节点
    */
   const root = scheduleUpdateOnFiber(current, lane, eventTime);
   if (root !== null) {

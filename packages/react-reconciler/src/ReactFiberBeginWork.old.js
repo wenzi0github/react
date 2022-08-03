@@ -1299,6 +1299,13 @@ function pushHostRootContext(workInProgress) {
   pushHostContainer(workInProgress, root.containerInfo);
 }
 
+/**
+ * 更新fiber树的根节点
+ * @param current
+ * @param workInProgress
+ * @param renderLanes
+ * @returns {Fiber|null}
+ */
 function updateHostRoot(current, workInProgress, renderLanes) {
   pushHostRootContext(workInProgress);
 
@@ -1418,6 +1425,10 @@ function updateHostRoot(current, workInProgress, renderLanes) {
     if (nextChildren === prevChildren) {
       return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
     }
+    /**
+     * current.updateQueue.shared.pending = sharedQueue， element结构在sharedQueue其中的一个update节点，
+     * 其实这里只有一个update节点
+     */
     reconcileChildren(current, workInProgress, nextChildren, renderLanes);
   }
   return workInProgress.child;
@@ -3709,6 +3720,11 @@ function beginWork(
   workInProgress: Fiber, // 本次循环主体(unitOfWork)，也即待处理的 Fiber 节点
   renderLanes: Lanes,
 ): Fiber | null {
+  /**
+   * current为当前树的那个fiber节点
+   * unitOfWork为 更新树 的那个fiber节点
+   * 在初始mount节点，current和unitOfWork都是fiberRoot节点
+   */
   if (__DEV__) {
     if (workInProgress._debugNeedsRemount && current !== null) {
       // This will restart the begin phase with a new fiber.
@@ -3727,6 +3743,8 @@ function beginWork(
     }
   }
 
+  // 判断当前fiber节点是否存在，若有current，说明已存在该节点，直接更新；若不存在，则mount
+  // 初始render()调用，current其实是存在的，因为current指向到了树的根节点
   if (current !== null) {
     // update阶段
     const oldProps = current.memoizedProps;
@@ -3854,6 +3872,7 @@ function beginWork(
       );
     }
     case HostRoot:
+      // 初始render()时，只有两棵树的根节点，current和 workInProgress 分别指向到这两棵树的根节点
       return updateHostRoot(current, workInProgress, renderLanes);
     case HostComponent:
       return updateHostComponent(current, workInProgress, renderLanes);

@@ -295,9 +295,9 @@ const RootDidNotComplete = 6;
 // Describes where we are in the React execution stack
 let executionContext: ExecutionContext = NoContext;
 // The root we're working on
-let workInProgressRoot: FiberRoot | null = null;
+let workInProgressRoot: FiberRoot | null = null; // current树的根节点，即目前正在使用的那棵fiber树的根节点
 // The fiber we're working on
-let workInProgress: Fiber | null = null;
+let workInProgress: Fiber | null = null; //
 // The lanes we're rendering
 let workInProgressRootRenderLanes: Lanes = NoLanes;
 
@@ -833,6 +833,8 @@ export function isInterleavedUpdate(fiber: Fiber, lane: Lane) {
  * 使用此功能为根计划任务。 每个根只有一个任务； 如果已经安排了任务，我们将检查以确
  * 保现有任务的优先级与 root 正在处理的下一个级别的优先级相同。 每次更新时都会调用
  * 此函数，并且就在退出任务之前。
+ * 此时 root.updateQueue.shared.pending = sharedQueue， element结构在sharedQueue其中的一个update节点，
+ * 其实这里只有一个update节点
  * @param root
  * @param currentTime
  */
@@ -918,7 +920,12 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
   if (newCallbackPriority === SyncLane) {
     // Special case: Sync React callbacks are scheduled on a special
     // internal queue
-    // 同步优先级
+    // 同步
+    //
+    /**
+     * 不过在React18中，createRoot()时，传入的是 ConcurrentRoot 模式
+     * const root = createContainer(container, ConcurrentRoot);
+     */
     if (root.tag === LegacyRoot) {
       if (__DEV__ && ReactCurrentActQueue.isBatchingLegacy !== null) {
         ReactCurrentActQueue.didScheduleLegacyUpdate = true;
@@ -977,6 +984,7 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
         schedulerPriorityLevel = NormalSchedulerPriority;
         break;
     }
+    // 并发模式
     newCallbackNode = scheduleCallback(
       schedulerPriorityLevel,
       performConcurrentWorkOnRoot.bind(null, root),
@@ -1614,7 +1622,7 @@ export function popRenderLanes(fiber: Fiber) {
 }
 
 /**
- * 准备新堆栈
+ * 准备新堆栈，返回更新树的根节点
  * @param root
  * @param lanes
  * @returns {Fiber}
@@ -1644,11 +1652,13 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
       interruptedWork = interruptedWork.return;
     }
   }
-  workInProgressRoot = root;
+  workInProgressRoot = root; // 当前current树的根节点
 
   // 获取到current树的对应面alternate，即workInProgress，若存在则使用，若不存在则创建
   // 在render()第一次调用时，root.current.alternate 肯定为空，这里面则会调用createFiber进行创建
   const rootWorkInProgress = createWorkInProgress(root.current, null);
+  // 初始执行时，workInProgress指向到更新树的根节点，
+  // 在mount阶段，workInProgress是新创建出来的，与current树的根节点workInProgressRoot，肯定是不相等的
   workInProgress = rootWorkInProgress;
   workInProgressRootRenderLanes = subtreeRenderLanes = workInProgressRootIncludedLanes = lanes;
   workInProgressRootExitStatus = RootInProgress;
@@ -2017,6 +2027,10 @@ function performUnitOfWork(unitOfWork: Fiber): void {
   // The current, flushed, state of this fiber is the alternate. Ideally
   // nothing should rely on this, but relying on it here means that we don't
   // need an additional field on the work in progress.
+  /**
+   * 初始mount节点时，unitOfWork 是上面workLoopConcurrent()中传入的 workInProgress，
+   * unitOfWork.alternate指向的是current
+   */
   const current = unitOfWork.alternate;
   setCurrentDebugFiberInDEV(unitOfWork);
 
@@ -2026,6 +2040,11 @@ function performUnitOfWork(unitOfWork: Fiber): void {
     next = beginWork(current, unitOfWork, subtreeRenderLanes);
     stopProfilerTimerIfRunningAndRecordDelta(unitOfWork, true);
   } else {
+    /**
+     * current为当前树的那个fiber节点
+     * unitOfWork为 更新树 的那个fiber节点
+     * 在初始mount节点，current和unitOfWork都是fiberRoot节点
+     */
     next = beginWork(current, unitOfWork, subtreeRenderLanes);
   }
 
