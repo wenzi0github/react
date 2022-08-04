@@ -117,7 +117,7 @@ if (__DEV__) {
 
 /**
  * 创建fiber节点
- * @param {WorkTag} tag
+ * @param {WorkTag} tag 节点的类型，如FunctionComponent（函数组件）, ClassComponent（类组件）, HostComponent（普通html标签）等
  * @param {mixed} pendingProps
  * @param {null | string} key
  * @param {TypeOfMode} mode
@@ -250,6 +250,24 @@ function FiberNode(
 //    is faster.
 // 5) It should be easy to port this to a C struct and keep a C implementation
 //    compatible.
+/**
+ * 翻译上面的英文：
+ * 这是一个构造函数，而不是POJO构造函数，请确保我们执行以下操作：
+ * 1） 任何人都不应在此基础上添加任何实例方法。实例方法在优化时可能更难预测，而且在静态编译器中几乎从未正确内联。
+ * 2） 任何人都不应依赖“光纤实例”进行型式试验。我们应该知道什么时候是纤维。
+ * 3） 我们可能想尝试使用数字键，因为它们在非JIT环境中更容易优化。
+ * 4） 如果速度更快，我们可以轻松地从构造函数转换为createFiber对象文字。
+ * 5） 将其移植到C结构并保持C实现的兼容性应该很容易
+ */
+
+/**
+ * 创建fiber节点
+ * @param {WorkTag} tag 节点的类型，如FunctionComponent（函数组件）, ClassComponent（类组件）, HostComponent（普通html标签）等
+ * @param pendingProps
+ * @param key
+ * @param mode
+ * @returns {FiberNode}
+ */
 const createFiber = function(
   tag: WorkTag,
   pendingProps: mixed,
@@ -260,7 +278,25 @@ const createFiber = function(
   return new FiberNode(tag, pendingProps, key, mode);
 };
 
+/**
+ * 判断是否是构建函数，即是否是类组件
+ * @param Component
+ * @returns {boolean}
+ */
 function shouldConstruct(Component: Function) {
+  /**
+   * 在JavaScript语言中，类和function，通过typeof 判断都是'function'无法区分，
+   * 如在React中可以用两种方式来实现类组件：
+   * class App extends React.Component {}
+   * function App() {}; App.prototype = new React.Component();
+   * 上面的两种方式，虽然一个用class声明，一个用function声明，但都是类组件，
+   * 但 function Count() { return (<p></p>) } 却是函数组件
+   * 因此无法通过 typeof Component 来判断当前组件是函数组件还是类组件，只能通过类组件的特性来判断
+   * 类组件都是要继承 React.Component 的，而 React.Component 的prototype上有一个 isReactComponent 属性，值为{}
+   * 文件地址在： packages/react/src/ReactBaseClasses.js
+   * 根据js的特性，Component.prototype 本身就有的，直接使用，若没有的，则会去向其父级查找，先查找父级实例的属性或方法，若实例上没有，则查找父级的prototype上的
+   * 因此只要判断 Component.prototype 上是否有 isReactComponent 属性，即可判断出当前是类组件还是函数组件
+   */
   const prototype = Component.prototype;
   return !!(prototype && prototype.isReactComponent);
 }
@@ -562,7 +598,7 @@ export function createFiberFromTypeAndProps(
       // 类组件
       fiberTag = ClassComponent;
       if (__DEV__) {
-        resolvedType = resolveClassForHotReloading(resolvedType);
+        resolvedType = resolveClassForHotReloading(resolvedType); // 没太明白这里做了什么处理
       }
     } else {
       // 函数组件，啥也没干
@@ -676,8 +712,8 @@ export function createFiberFromTypeAndProps(
 
   // 通过上面的判断，得到fiber的类型后，则调用createFiber()函数，生成fiber节点
   const fiber = createFiber(fiberTag, pendingProps, key, mode);
-  fiber.elementType = type;
-  fiber.type = resolvedType;
+  fiber.elementType = type; // fiber中的elmentType与element中的type一样，
+  fiber.type = resolvedType; // 测试环境会做一些处理，正式环境与elementType属性一样
   fiber.lanes = lanes;
 
   if (__DEV__) {

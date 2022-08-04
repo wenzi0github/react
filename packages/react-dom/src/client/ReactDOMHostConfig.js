@@ -338,6 +338,16 @@ export function prepareUpdate(
   );
 }
 
+/**
+ * 是否需要设置文本内容
+ * 满足下列之一即可：
+ * 1. 若当前是textarea标签、noscript标签，
+ * 2. 内容是string类型、number类型，
+ * 3. 属性dangerouslySetInnerHTML中有内容
+ * @param type
+ * @param props
+ * @returns {boolean}
+ */
 export function shouldSetTextContent(type: string, props: Props): boolean {
   return (
     type === 'textarea' ||

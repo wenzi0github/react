@@ -441,7 +441,7 @@ export function renderWithHooks<Props, SecondArg>(
   } else {
     // 根据是否是初始化挂载，来决定是初始化hook，还是更新hook
     // 将初始化或更新hook的方法给到 ReactCurrentDispatcher.current 上，
-    // 稍后执行它
+    // 稍后函数组件拿到的hooks，都是从 ReactCurrentDispatcher.current 中拿到的
     ReactCurrentDispatcher.current =
       current === null || current.memoizedState === null
         ? HooksDispatcherOnMount
@@ -449,7 +449,7 @@ export function renderWithHooks<Props, SecondArg>(
   }
 
   /**
-   * 执行 Function Component，将我们写的jsx通过babel编译为element结构
+   * 执行 Function Component，将我们写的jsx通过babel编译为element结构，并返回
    */
   let children = Component(props, secondArg);
 

@@ -2053,7 +2053,7 @@ function performUnitOfWork(unitOfWork: Fiber): void {
   resetCurrentDebugFiberInDEV();
   unitOfWork.memoizedProps = unitOfWork.pendingProps;
   if (next === null) {
-    // 无需关心当前节点的子fiber节点
+    // unitOfWork已经是最内层的节点了，没有子节点了
     // If this doesn't spawn new work, complete the current work.
     completeUnitOfWork(unitOfWork);
   } else {

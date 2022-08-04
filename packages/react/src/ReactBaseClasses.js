@@ -15,6 +15,7 @@ if (__DEV__) {
 
 /**
  * Base class helpers for the updating state of a component.
+ * 类组件的基类，所有的类组件都应当继承于此类
  */
 function Component(props, context, updater) {
   this.props = props;
@@ -26,7 +27,7 @@ function Component(props, context, updater) {
   this.updater = updater || ReactNoopUpdateQueue;
 }
 
-Component.prototype.isReactComponent = {};
+Component.prototype.isReactComponent = {}; // 该属性可以用于判断typeof Component === 'function' 的组件是类组件还是函数组件
 
 /**
  * Sets a subset of the state. Always use this to mutate

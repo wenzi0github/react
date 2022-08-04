@@ -1057,12 +1057,21 @@ function updateFunctionComponent(
     markComponentRenderStopped();
   }
 
+  console.log('updateFunctionComponent nextChildren', nextChildren);
+
   /**
    * 若current不为空，且 didReceiveUpdate 为false时，
    * 执行 bailoutHooks
    */
   if (current !== null && !didReceiveUpdate) {
     bailoutHooks(current, workInProgress, renderLanes);
+    /**
+     * 优化的工作路径 —— bailout https://juejin.cn/post/7017702556629467167#heading-17
+     * React 引入了树遍历算法中的常用优化手段 —— “剪枝”，在 React 中又被称作 bailout 。
+     * 通过 bailout ，某些与本次更新毫无关系的 Fiber 树路径将被直接省略掉；当然，
+     * “省略”并不是直接将这部分 Fiber 节点丢弃，而是直接复用被“省略”的 Fiber 子树的根节点；
+     * 这种“复用”方式，是会保留被“省略”的 Fiber 子树的所有 Fiber 节点的。
+     */
     return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
   }
 
@@ -1216,7 +1225,7 @@ function finishClassComponent(
     return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
   }
 
-  const instance = workInProgress.stateNode;
+  const instance = workInProgress.stateNode; // 类组件的实例
 
   // Rerender
   ReactCurrentOwner.current = workInProgress;
@@ -1255,6 +1264,7 @@ function finishClassComponent(
       }
       setIsRendering(false);
     } else {
+      // 类组件，就调用render()方法获取jsx对应的element结构
       nextChildren = instance.render();
     }
     if (enableSchedulingProfiler) {
@@ -1466,6 +1476,13 @@ function mountHostRootWithoutHydrating(
   return workInProgress.child;
 }
 
+/**
+ * 处理html标签的element结构
+ * @param current
+ * @param workInProgress
+ * @param renderLanes
+ * @returns {Fiber}
+ */
 function updateHostComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -1658,8 +1675,22 @@ function mountIncompleteClassComponent(
   );
 }
 
+/**
+ * 这是一个函数，但不知道是函数组件还是类组件的组件
+ * 本身就明确是类组件的，已经走 updateClassComponent() 的逻辑，这里的，主要区分比如下列的一些场景：
+ * 因为在js中，class 和 function 都可以用来声明一个类，而且从类型上是无法区分的；
+ * 还有，function App() { return { render() {} } }，执行 App() 得到的对象，也有render()方法
+ * 而正常的函数组件 function App() { return (<p>this is function component</p>) }
+ * 就是很多看起来像是函数组件的，再细致地判断一次。
+ * 只有初始化时才会走到这里，二次渲染更新时，组件的类型就已经确定好了，不会再走这里。
+ * @param _current
+ * @param workInProgress
+ * @param Component // workInProgress.type，是该函数
+ * @param renderLanes
+ * @returns {Fiber|*}
+ */
 function mountIndeterminateComponent(
-  _current,
+  _current, // 好奇怪，这里为什么要用下划线开头
   workInProgress,
   Component,
   renderLanes,
@@ -1689,6 +1720,7 @@ function mountIndeterminateComponent(
       Component.prototype &&
       typeof Component.prototype.render === 'function'
     ) {
+      // 这个组件自己实现了一个render()方法，给出错误，应当继承自React.Component
       const componentName = getComponentNameFromType(Component) || 'Unknown';
 
       if (!didWarnAboutBadClass[componentName]) {
@@ -1719,6 +1751,11 @@ function mountIndeterminateComponent(
     hasId = checkDidRenderIdHook();
     setIsRendering(false);
   } else {
+    /**
+     * 决定当前要使用的是mout hooks，还是update hooks，
+     * 并返回执行 Component(props, context)的结果，若是正常的函数组件，就会返回里面的jsx对应的element结构
+     * 若是其他类型，则返回对应的数据结构
+     */
     value = renderWithHooks(
       null,
       workInProgress,
@@ -1771,6 +1808,9 @@ function mountIndeterminateComponent(
     typeof value.render === 'function' &&
     value.$$typeof === undefined
   ) {
+    // 若执行Component()得到的结果value，是Object类型，且有render()方法，且没有 $$typeof，
+    // 表示value肯定不是 element 结构，而有render()方法的对象
+    // 则我们认为当前的 workInProgress 是类组件
     if (__DEV__) {
       const componentName = getComponentNameFromType(Component) || 'Unknown';
       if (!didWarnAboutModulePatternComponent[componentName]) {
@@ -1789,6 +1829,7 @@ function mountIndeterminateComponent(
     }
 
     // Proceed under the assumption that this is a class instance
+    // 在假设这是一个类实例的情况下继续
     workInProgress.tag = ClassComponent;
 
     // Throw out any hooks that were used.
@@ -1809,10 +1850,13 @@ function mountIndeterminateComponent(
     workInProgress.memoizedState =
       value.state !== null && value.state !== undefined ? value.state : null;
 
+    // 给当前fiber节点初始化一个 updateQueue 的链表
     initializeUpdateQueue(workInProgress);
 
     adoptClassInstance(workInProgress, value);
     mountClassInstance(workInProgress, Component, props, renderLanes);
+
+    // 执行 workInProgress.stateNode 的类组件的实例中的render()方法
     return finishClassComponent(
       null,
       workInProgress,
@@ -1823,6 +1867,8 @@ function mountIndeterminateComponent(
     );
   } else {
     // Proceed under the assumption that this is a function component
+    // 在假设这是一个函数组件的情况下继续
+    // 若不符合上面if的判断，我们认为则一个函数组件
     workInProgress.tag = FunctionComponent;
     if (__DEV__) {
       if (disableLegacyContext && Component.contextTypes) {
@@ -1858,6 +1904,8 @@ function mountIndeterminateComponent(
       pushMaterializedTreeId(workInProgress);
     }
 
+    // 个人猜测，因为current为空，才不知道当前workInProgress是什么类型的，因此这里的current直接传的null
+    // value即nextChild，即element结构
     reconcileChildren(null, workInProgress, value, renderLanes);
     if (__DEV__) {
       validateFunctionComponentInDev(workInProgress, Component);
@@ -3370,7 +3418,7 @@ function resetSuspendedCurrentOnMountInLegacyMode(current, workInProgress) {
 }
 
 /**
- * 救助已经完成的工作
+ * 省略已经完成的工作
  * @param current
  * @param workInProgress
  * @param renderLanes
@@ -3381,6 +3429,15 @@ function bailoutOnAlreadyFinishedWork(
   workInProgress: Fiber,
   renderLanes: Lanes,
 ): Fiber | null {
+  /**
+   * bailout 需要满足以下条件：
+   *
+   * 1. 无外部参数更新（props 和老版本的 context）
+   * 2. 从 lanes 上看，本次 render 的任务中是否包含当前 Fiber 节点的更新任务（在 concurrent 模式下，
+   *      不同的更新任务有不同的优先级，因此存在当前 Fiber 节点有更新任务，但未被纳入本次 render 中的情况；
+   *      当然，更常见的是当前 Fiber 节点根本没有更新任务）：!includesSomeLane(renderLanes, updateLanes)
+   * 3. 当前 Fiber 节点的后代节点中，没有需要在本次 render 过程中处理的更新任务（下文会介绍判断的具体代码段）。
+   */
   if (current !== null) {
     // Reuse previous dependencies
     workInProgress.dependencies = current.dependencies;
@@ -3734,6 +3791,7 @@ function beginWork(
   workInProgress: Fiber, // 本次循环主体(unitOfWork)，也即待处理的 Fiber 节点
   renderLanes: Lanes,
 ): Fiber | null {
+  // console.log('beginWork', current, workInProgress);
   /**
    * current为当前树的那个fiber节点
    * unitOfWork为 更新树 的那个fiber节点
@@ -3839,6 +3897,7 @@ function beginWork(
   // 根据 workInProgress 不同的tag，创建不同的fiber节点
   switch (workInProgress.tag) {
     case IndeterminateComponent: {
+      // 用function实现的，但暂时还不知道当前是函数组件还是类组件
       return mountIndeterminateComponent(
         current,
         workInProgress,
@@ -3856,7 +3915,8 @@ function beginWork(
       );
     }
     case FunctionComponent: {
-      const Component = workInProgress.type;
+      // 函数组件
+      const Component = workInProgress.type; // 函数组件时，type即该函数，可以直接执行type()
       const unresolvedProps = workInProgress.pendingProps;
       const resolvedProps =
         workInProgress.elementType === Component
@@ -3871,6 +3931,7 @@ function beginWork(
       );
     }
     case ClassComponent: {
+      // 类组件
       const Component = workInProgress.type;
       const unresolvedProps = workInProgress.pendingProps;
       const resolvedProps =
@@ -3889,6 +3950,7 @@ function beginWork(
       // 初始render()时，只有两棵树的根节点，current和 workInProgress 分别指向到这两棵树的根节点
       return updateHostRoot(current, workInProgress, renderLanes);
     case HostComponent:
+      // html标签
       return updateHostComponent(current, workInProgress, renderLanes);
     case HostText:
       return updateHostText(current, workInProgress);
@@ -3914,6 +3976,7 @@ function beginWork(
     case Fragment:
       return updateFragment(current, workInProgress, renderLanes);
     case Mode:
+      // 如 <React.StrictMode></React.StrictMode>
       return updateMode(current, workInProgress, renderLanes);
     case Profiler:
       return updateProfiler(current, workInProgress, renderLanes);

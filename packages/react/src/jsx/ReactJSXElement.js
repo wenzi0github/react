@@ -298,7 +298,7 @@ export function jsx(type, config, maybeKey) {
    * 我们的节点有有三种类型：
    * 1. 普通的html标签，type为该标签的tagName，如div, span等；
    * 2. 当前是Function Component节点时，则type该组件的函数体，即可以执行type()；
-   * 3. 当前是Class Component节点，则type为该class，可以通过该type，new出一个实例；
+   * 3. 当前是Class Component节点，则type为该Class，可以通过该type，new出一个实例(new Type())；
    * 而type对应的是Function Component时，可以给该组件添加defaultProps属性，
    * 当设置了defaultProps，则将未明确传入的属性给到props里
    */
