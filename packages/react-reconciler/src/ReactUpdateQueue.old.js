@@ -459,9 +459,7 @@ function getStateFromUpdate<State>(
     }
     // Intentional fallthrough
     case UpdateState: {
-      // Class Component中的setState流程
-      // this.state = {a:1};
-      // this.setState();
+
       const payload = update.payload;
       let partialState; // 临时变量，用于存储传入进来的新state结果，方便最后进行assign合并处理
       if (typeof payload === 'function') {
@@ -497,6 +495,11 @@ function getStateFromUpdate<State>(
       }
       // Merge the partial state and the previous state.
       // 与之前的state数据进行合并
+      /**
+       * 初始render()时，payload为 { element }，会给到变量 partialState
+       * prevState为 { cache, element: null, isDehydrated: false, pendingSuspenseBoundaries: null, transitions: null }
+       * 两者合并时，相当于合并了 element 属性
+       */
       return assign({}, prevState, partialState);
     }
     case ForceUpdate: {
@@ -529,19 +532,32 @@ export function processUpdateQueue<State>(
     currentlyProcessingQueue = queue.shared;
   }
 
-  let firstBaseUpdate = queue.firstBaseUpdate;
-  let lastBaseUpdate = queue.lastBaseUpdate;
+  let firstBaseUpdate = queue.firstBaseUpdate; // 更新链表的开始节点
+  let lastBaseUpdate = queue.lastBaseUpdate; // 更新链表的最后的那个节点
 
   // Check if there are pending updates. If so, transfer them to the base queue.
+  // 检测queue中是否有挂起的更新，若存在，则将其转义到 firstBaseUpdate 上，并清空刚才的链表
   let pendingQueue = queue.shared.pending;
   if (pendingQueue !== null) {
     queue.shared.pending = null;
 
     // The pending queue is circular. Disconnect the pointer between first
     // and last so that it's non-circular.
-    const lastPendingUpdate = pendingQueue;
-    const firstPendingUpdate = lastPendingUpdate.next;
-    lastPendingUpdate.next = null;
+    /**
+     * 若pending queue 是一个环形链表，则将第一个和最后一个节点断开，
+     * 环形链表默认指向的是最后一个节点，因此 pendingQueue 指向的就是最后一个节点，
+     * pendingQueue.next(lastPendingUpdate.next)就是第一个节点了
+     */
+    const lastPendingUpdate = pendingQueue; // 环形链表的最后一个节点
+    const firstPendingUpdate = lastPendingUpdate.next; // 环形链表的第一个节点
+    lastPendingUpdate.next = null; // 最后一个节点与第一个节点断开
+
+    /**
+     * 将 pendingQueue 拼接到 更新链表 queue.firstBaseUpdate 的后面
+     * 1. 更新链表的最后那个节点为空，说明当前更新链表为空，将要更新的首节点 firstPendingUpdate 给到 firstBaseUpdate即可；
+     * 2. 若更新链表的尾节点不为，则将要更新的首节点 firstPendingUpdate 拼接到 lastBaseUpdate 的后面；
+     * 3. 拼接完毕后，lastBaseUpdate 指向到新的更新链表最后的那个节点；
+     */
     // Append pending updates to base queue
     if (lastBaseUpdate === null) {
       firstBaseUpdate = firstPendingUpdate;
@@ -555,6 +571,11 @@ export function processUpdateQueue<State>(
     // queue is a singly-linked list with no cycles, we can append to both
     // lists and take advantage of structural sharing.
     // TODO: Pass `current` as argument
+    /**
+     * 若workInProgress对应的在current树的那个fiber节点的更新队列，与当前的不一样，
+     * 则我们将上面「将要更新」的链表的头指针和尾指针给到基本更新队列中，
+     * 拼接方式与上面的一样
+     */
     const current = workInProgress.alternate;
     if (current !== null) {
       // This is always non-null on a ClassComponent or HostRoot
@@ -571,6 +592,10 @@ export function processUpdateQueue<State>(
     }
   }
 
+  /**
+   * 进行到这里，render()初始更新时，放在 queue.shared.pending 中的element结构，
+   * 就已经放到 queue.firstBaseUpdate 里了
+   */
   // These values may change as we process the queue.
   if (firstBaseUpdate !== null) {
     // Iterate through the list of updates to compute the result.
@@ -611,6 +636,7 @@ export function processUpdateQueue<State>(
         newLanes = mergeLanes(newLanes, updateLane);
       } else {
         // This update does have sufficient priority.
+        // 初始render()时会走这里
 
         if (newLastBaseUpdate !== null) {
           const clone: Update<State> = {
@@ -620,7 +646,7 @@ export function processUpdateQueue<State>(
             // this will never be skipped by the check above.
             lane: NoLane,
 
-            tag: update.tag,
+            tag: update.tag, // 初始render()的tag为UpdateState，即为0
             payload: update.payload,
             callback: update.callback,
 
@@ -630,6 +656,14 @@ export function processUpdateQueue<State>(
         }
 
         // Process this update.
+        /**
+         * render()时 newState 的默认值
+         * cache: {controller: AbortController, data: Map(0), refCount: 1}
+         * element: null
+         * isDehydrated: false
+         * pendingSuspenseBoundaries: null
+         * transitions: null
+         */
         newState = getStateFromUpdate(
           workInProgress,
           queue,
@@ -681,6 +715,17 @@ export function processUpdateQueue<State>(
     queue.baseState = ((newBaseState: any): State);
     queue.firstBaseUpdate = newFirstBaseUpdate;
     queue.lastBaseUpdate = newLastBaseUpdate;
+
+    /**
+     * 经过上面的操作，queue（即 workInProgress.updateQueue ）为：
+     * baseState: { element: element结构, isDehydrated: false }
+     * effects: null,
+     * firstBaseUpdate: null,
+     * lastBaseUpdate: null,
+     * shared: { pending: null, interleaved: null, lanes: 0 }
+     */
+
+    // https://mat1.gtimg.com/qqcdn/tupload/1659687672451.png
 
     // Interleaved updates are stored on a separate queue. We aren't going to
     // process them during this render, but we do need to track which lanes

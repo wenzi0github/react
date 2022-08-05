@@ -245,7 +245,7 @@ export function createFiberRoot(
   }
 
   /**
-   * 给传入的fiber节点创建一个updateQueue属性
+   * 给传入的fiber节点创建一个 updateQueue 属性
    * uninitializedFiber.updateQueue = {
    *  baseState: uninitializedFiber.memoizedState
    * };

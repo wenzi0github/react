@@ -1333,18 +1333,29 @@ function updateHostRoot(current, workInProgress, renderLanes) {
   const nextProps = workInProgress.pendingProps;
   const prevState = workInProgress.memoizedState;
   const prevChildren = prevState.element;
+
+  /**
+   * 将current节点中的updateQueue中的属性，复制给workInProgress节点
+   */
   cloneUpdateQueue(current, workInProgress);
 
   /**
    * current.updateQueue.shared.pending = sharedQueue， element结构在sharedQueue其中的一个update节点，
    * 其实这里只有一个update节点
-   * pushRootTransition()函数其中一个作用是将 workInProgress 中 updateQueue.shared.pending 指向的双向链表，
-   * 改为单项链表，放到workInProgress.updateQueue.firstBaseUpdate中
+   * processUpdateQueue()函数其中一个作用是将 workInProgress 中 updateQueue.shared.pending 指向的双向链表，改为单项链表，
+   * 并且把pending中的数据，放到 workInProgress.updateQueue 里的 baseState 属性中，即：
+   * workInProgress.updateQueue = {
+   *   baseState: { element },
+   *   firstBaseUpdate: null,
+   *   lastBaseUpdate: null,
+   *   shared: { pending: null }
+   * }
    */
   processUpdateQueue(workInProgress, nextProps, null, renderLanes);
 
+  // 初始时，memoizedState 与 workInProgress.updateQueue.baseState 一样
   const nextState: RootState = workInProgress.memoizedState;
-  const root: FiberRoot = workInProgress.stateNode;
+  const root: FiberRoot = workInProgress.stateNode; // 当workInProgress指向在树的根节点时，stateNode指向的整个应用的根节点 FiberRootNode
   pushRootTransition(workInProgress, root, renderLanes);
 
   if (enableCache) {
@@ -1446,12 +1457,14 @@ function updateHostRoot(current, workInProgress, renderLanes) {
     // Root is not dehydrated. Either this is a client-only root, or it
     // already hydrated.
     resetHydrationState();
+
+    // 初始时，prevChildren为null，nextChildren为将要更新的element
+    // 后续二次更新时，若前后两次的element没有变化，则提前退出，直接复用之前的节点
     if (nextChildren === prevChildren) {
       return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
     }
     /**
-     * current.updateQueue.shared.pending = sharedQueue， element结构在sharedQueue其中的一个update节点，
-     * 其实这里只有一个update节点
+     * nextChildren 为将要转为fiber节点的element结构
      */
     reconcileChildren(current, workInProgress, nextChildren, renderLanes);
   }
@@ -3819,8 +3832,9 @@ function beginWork(
   // 初始render()调用，current其实是存在的，因为current指向到了树的根节点
   if (current !== null) {
     // update阶段
-    const oldProps = current.memoizedProps;
-    const newProps = workInProgress.pendingProps;
+    const oldProps = current.memoizedProps; // 初始时为null
+    const newProps = workInProgress.pendingProps; // 初始时为null
+    console.log('workInProgress', workInProgress, oldProps, newProps);
 
     if (
       oldProps !== newProps ||
@@ -3836,6 +3850,9 @@ function beginWork(
       // Neither props nor legacy context changes. Check if there's a pending
       // update or context change.
       // props和上下文都没有改变，检查是否有挂起的更新或上下文更改。
+      /**
+       * 判断current的lanes和renderLanes是否有重合，若有则需要更新
+       */
       const hasScheduledUpdateOrContext = checkScheduledUpdateOrContext(
         current,
         renderLanes,

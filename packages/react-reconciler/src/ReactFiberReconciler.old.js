@@ -332,7 +332,7 @@ export function createHydrationContainer(
 }
 
 /**
- * 更新element树，将其更新到container上
+ * 将element结构转为fiber树
  * @param {ReactNodeList} element 虚拟DOM树
  * @param {OpaqueRoot} container FiberRootNode 节点
  * @param {?React$Component<any, any>} parentComponent 在React18传到这里的是null

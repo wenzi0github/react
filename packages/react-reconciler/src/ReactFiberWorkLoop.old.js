@@ -985,6 +985,7 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
         break;
     }
     // 并发模式
+    console.log('ensureRootIsScheduled, before performConcurrentWorkOnRoot', root);
     newCallbackNode = scheduleCallback(
       schedulerPriorityLevel,
       performConcurrentWorkOnRoot.bind(null, root),
@@ -1049,9 +1050,10 @@ function performConcurrentWorkOnRoot(root, didTimeout) {
     !includesBlockingLane(root, lanes) &&
     !includesExpiredLane(root, lanes) &&
     (disableSchedulerTimeoutInWorkLoop || !didTimeout);
+  console.log('exitStatus = shouldTimeSlice', shouldTimeSlice);
   let exitStatus = shouldTimeSlice
     ? renderRootConcurrent(root, lanes)
-    : renderRootSync(root, lanes);
+    : renderRootSync(root, lanes); // React18初始化时走的是这里
   if (exitStatus !== RootInProgress) {
     if (exitStatus === RootErrored) {
       // If something threw an error, try rendering one more time. We'll
@@ -1652,10 +1654,15 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
       interruptedWork = interruptedWork.return;
     }
   }
-  workInProgressRoot = root; // 当前current树的根节点
+  workInProgressRoot = root; // 整个React应用的根节点，即 FiberRootNode
 
-  // 获取到current树的对应面alternate，即workInProgress，若存在则使用，若不存在则创建
-  // 在render()第一次调用时，root.current.alternate 肯定为空，这里面则会调用createFiber进行创建
+  /**
+   * prepareFreshStack()个人认为是只在初始化时执行一次，root是整个应用的根节点，而root.current就是默认展示的那棵树，
+   * 在初始化时，current 树其实也没内容，只有这棵树的一个根节点；
+   * 然后利用current的根节点通过 createWorkInProgress()方法 创建另一棵树的根节点rootWorkInProgress
+   * createWorkInProgress()方法内则判断了 current.alternate 是否为空，来决定是否可以复用这个节点，
+   * 在render()第一次调用时，root.current.alternate 肯定为空，这里面则会调用createFiber进行创建
+   */
   const rootWorkInProgress = createWorkInProgress(root.current, null);
   // 初始执行时，workInProgress指向到更新树的根节点，
   // 在mount阶段，workInProgress是新创建出来的，与current树的根节点workInProgressRoot，肯定是不相等的
@@ -1845,12 +1852,19 @@ export function renderHasNotSuspendedYet(): boolean {
 }
 
 function renderRootSync(root: FiberRoot, lanes: Lanes) {
+  console.log('renderRootSync', root);
   const prevExecutionContext = executionContext;
   executionContext |= RenderContext;
   const prevDispatcher = pushDispatcher();
 
   // If the root or lanes have changed, throw out the existing stack
   // and prepare a fresh one. Otherwise we'll continue where we left off.
+  console.log('workInProgressRoot !== root', workInProgressRoot, root);
+  /**
+   * workInProgressRoot: 整个应用的根节点，初始时为null，经过下面 prepareFreshStack() 后，root给到workInProgressRoot，
+   * 即使第二次调用了，这里的if逻辑也是不会走的
+   * workInProgress初始指向到workInProgressRoot，随着构建的深入，workInProgress一步步往下走
+   */
   if (workInProgressRoot !== root || workInProgressRootRenderLanes !== lanes) {
     if (enableUpdaterTracking) {
       if (isDevToolsPresent) {
@@ -1869,6 +1883,11 @@ function renderRootSync(root: FiberRoot, lanes: Lanes) {
     }
 
     workInProgressTransitions = getTransitionsForLanes(root, lanes);
+    console.log('renderRootSync before prepareFreshStack');
+
+    /**
+     * 将整个应用的根节点和将要更新的fiber树的根节点赋值到全局变量中
+     */
     prepareFreshStack(root, lanes);
   }
 
@@ -1884,6 +1903,7 @@ function renderRootSync(root: FiberRoot, lanes: Lanes) {
 
   do {
     try {
+      console.log('renderRootSync, before workLoopSync');
       workLoopSync();
       break;
     } catch (thrownValue) {
@@ -1935,6 +1955,7 @@ function workLoopSync() {
 }
 
 function renderRootConcurrent(root: FiberRoot, lanes: Lanes) {
+  console.log('renderRootConcurrent', root);
   const prevExecutionContext = executionContext;
   executionContext |= RenderContext;
   const prevDispatcher = pushDispatcher();
