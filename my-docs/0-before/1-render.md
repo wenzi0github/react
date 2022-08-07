@@ -109,6 +109,12 @@ export function createRoot(container: Element | Document | DocumentFragment, opt
 
 上面的每个函数我们都没有去关注他具体的实现，只是先看下大致的流程，避免因太多深入某一项，导致忘记大局流程，造成思维混乱。我们可以看到上面的`createContainer()`函数的调用链路很深，一直到最终的 FiberNode() 函数。这里我们仅了解这些函数的大致功能，后续我们会一一进行解析。
 
+如执行函数 createContainer() ，就已经有 fiber 树的基本结构了：
+
+![createContainer方法创建出的基本fiber树](https://mat1.gtimg.com/qqcdn/tupload/1659715740891.png)
+
+这里只有两个节点，FiberRootNode 是整个应用的根节点，它的 current 指针指到哪个节点，就表示当前正在展示的是哪棵 fiber 树。左侧 FiberNode 是刚创建出来的一棵 fiber 树的根节点，目前只有这一棵 fiber 树。随着后续 render()方法的调用，会通过这棵 fiber 树的根节点创建出另一棵树的根节点。
+
 ## 3. ReactDOMRoot() 类的实现
 
 ReactDOMRoot()类还是在当前的文件中：[ReactDOMRoot()的实现](https://github.com/wenzi0github/react/blob/6bef98a66fb9e05119d75bd44f7d0190758ed7f8/packages/react-dom/src/client/ReactDOMRoot.js#L93)。

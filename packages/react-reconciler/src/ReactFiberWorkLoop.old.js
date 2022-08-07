@@ -471,8 +471,10 @@ export function requestUpdateLane(fiber: Fiber): Lane {
   // Special cases
   // 获取到当前渲染的模式：sync mode（同步模式） 或 concurrent mode（并发模式）
   const mode = fiber.mode;
+  console.log('fiber.mode', fiber.mode, workInProgressRootRenderLanes);
   if ((mode & ConcurrentMode) === NoMode) {
     // 检查当前渲染模式是不是并发模式，等于NoMode表示不是，则使用同步模式渲染
+    // React18中默认使用的并发模式，
     return (SyncLane: Lane);
   } else if (
     !deferRenderPhaseUpdateToNextBatch &&
@@ -1852,16 +1854,19 @@ export function renderHasNotSuspendedYet(): boolean {
 }
 
 function renderRootSync(root: FiberRoot, lanes: Lanes) {
-  console.log('renderRootSync', root);
   const prevExecutionContext = executionContext;
   executionContext |= RenderContext;
   const prevDispatcher = pushDispatcher();
 
   // If the root or lanes have changed, throw out the existing stack
   // and prepare a fresh one. Otherwise we'll continue where we left off.
-  console.log('workInProgressRoot !== root', workInProgressRoot, root);
   /**
-   * workInProgressRoot: 整个应用的根节点，初始时为null，经过下面 prepareFreshStack() 后，root给到workInProgressRoot，
+   * 整个应用目前只有 FiberRootNode和current两个节点，current树只有一个根节点，就是current自己；
+   * 另一棵树还没有创建，结构是这样： https://mat1.gtimg.com/qqcdn/tupload/1659715740891.png
+   * prepareFreshStack() 函数的作用，就是通过current树的根节点创建出另一棵树的根节点，
+   * 并将这两棵树通过 alternate 属性，实现互相的指引
+   * workInProgressRoot: 是将要构建的树的根节点，初始时为null，经过下面 prepareFreshStack() 后，
+   * root.current给到workInProgressRoot，
    * 即使第二次调用了，这里的if逻辑也是不会走的
    * workInProgress初始指向到workInProgressRoot，随着构建的深入，workInProgress一步步往下走
    */
@@ -1883,7 +1888,6 @@ function renderRootSync(root: FiberRoot, lanes: Lanes) {
     }
 
     workInProgressTransitions = getTransitionsForLanes(root, lanes);
-    console.log('renderRootSync before prepareFreshStack');
 
     /**
      * 将整个应用的根节点和将要更新的fiber树的根节点赋值到全局变量中
