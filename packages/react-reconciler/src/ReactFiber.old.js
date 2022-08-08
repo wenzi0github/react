@@ -130,10 +130,10 @@ function FiberNode(
   mode: TypeOfMode,
 ) {
   // Instance
-  this.tag = tag; // 当前节点的类型，如 FunctionComponent, ClassComponent 等
+  this.tag = tag; // 当前节点的类型，如 FunctionComponent, ClassComponent, HostRoot 等
 
   /**
-   * 这个字段和 react element 的 key 的含义和内容有一样（因为这个 key 是
+   * 这个字段和 react element 的 key 的含义和内容一样（因为这个 key 是
    * 从 react element 的key 那里直接拷贝赋值过来的），作为 children 列表
    * 中每一个 item 的唯一标识。它被用于帮助 React 去计算出哪个 item 被修改了，
    * 哪个 item 是新增的，哪个 item 被删除了。
@@ -186,8 +186,8 @@ function FiberNode(
   this.subtreeFlags = NoFlags; // 子节点的更新情况，若为NoFlags，则表示其子节点不更新，在diff时可以直接跳过
   this.deletions = null; // 子节点中需要删除的节点
 
-  this.lanes = NoLanes;
-  this.childLanes = NoLanes;
+  this.lanes = NoLanes; // 当前fiber节点更新的优先级
+  this.childLanes = NoLanes; // 当前节点的子节点是否需要更新
 
   /**
    * 双缓冲：防止数据丢失，提高效率（之后Dom-diff的时候可以直接比较或者使用
@@ -263,9 +263,9 @@ function FiberNode(
 /**
  * 创建fiber节点
  * @param {WorkTag} tag 节点的类型，如FunctionComponent（函数组件）, ClassComponent（类组件）, HostComponent（普通html标签）等
- * @param pendingProps
- * @param key
- * @param mode
+ * @param {mixed} pendingProps 初始的属性
+ * @param {null|string} key
+ * @param {TypeOfMode} mode
  * @returns {FiberNode}
  */
 const createFiber = function(
@@ -523,7 +523,7 @@ export function resetWorkInProgress(workInProgress: Fiber, renderLanes: Lanes) {
 
 /**
  * 创建fiber树的根节点
- * @param {RootTag} tag
+ * @param {RootTag} tag 当前应用的模式，0是之前legacy模式，1是现在最新的Concurrent模式，React18中默认是1
  * @param {boolean} isStrictMode 是否是严格模式，默认是false
  * @param concurrentUpdatesByDefaultOverride 默认情况下的并发更新覆盖，默认为false
  * @returns {Fiber}

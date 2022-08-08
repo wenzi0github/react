@@ -2,6 +2,10 @@
 
 > 我们解析的源码是 React18.1.0 版本，请注意版本号。React 源码学习的 GitHub 仓库地址：[https://github.com/wenzi0github/react](https://github.com/wenzi0github/react)。
 
+我们在上一篇文章 [React18 源码解析之虚拟 DOM 转为 fiber 树](https://www.xiabingbao.com/post/fe/loop-settimeout-rg18mv.html) 中只是简单地了解了下 beginWork() 的操作，通过beginWork()可以将当前fiber节点里的element转为fiber节点。这篇文章我们会详细讲解下，element转为fiber节点的具体实现。
+
+## 1. 基本操作
+
 beginWork()函数根据不同的节点类型（如函数组件、类组件、html标签、树的根节点等），调用不同的函数来处理，将该fiber节点中带有的element结构解析成fiber节点。我们第一次调用时，unitOfWork（即workInProgress）最初指向的就是树的根节点，这个根节点的类型`tag`是：HostRoot。
 
 根据不同的fiber节点属性，携带的不同的element结构，处理方式也是不一样的。
@@ -14,3 +18,5 @@ beginWork()函数根据不同的节点类型（如函数组件、类组件、htm
 上面不同类型的fiber节点都得到了element结构，但将element转为fiber节点时，调用的方式也不一样，如转为文本节点、普通div节点、element为数组转为系列节点、或者elemen转为FunctionComponent类型的节点等等。
 
 beginWork()处理完当前fiber节点的element结构后，就会到一个这个element对应的新的fiber节点（若element是数组的话，则得到的是fiber链表结构的头节点），workInProgress 再指向到这个新的fiber节点（workInProgress = next），继续处理。若没有子节点了，workInProgress就会指向其兄弟元素；若所有的兄弟元素也都处理完了，就返回到其父级节点，查看父级是否有兄弟节点。
+
+## 2. 

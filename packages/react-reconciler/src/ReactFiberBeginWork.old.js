@@ -547,6 +547,7 @@ function updateMemoComponent(
     current,
     renderLanes,
   );
+  console.log('hasScheduledUpdateOrContext', hasScheduledUpdateOrContext);
   if (!hasScheduledUpdateOrContext) {
     // This will be the props with resolved defaultProps,
     // unlike current.memoizedProps which will be the unresolved ones.
@@ -3792,19 +3793,18 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
 }
 
 /**
- *
+ * 将 workInProgress中的element结构转为fiber节点
  * 流程图：https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/96509d9313404a0cbb8df590cb57c4a0~tplv-k3u1fbpfcp-zoom-in-crop-mark:1304:0:0:0.awebp?
- * @param current
- * @param workInProgress
- * @param renderLanes
- * @returns {Fiber|Fiber|*}
+ * @param {Fiber | null} current 当前正在展示的那棵树的节点，初始渲染时是没有正在展示的那棵树的，因此可能为null
+ * @param {Fiber} workInProgress 当前正在处理的fiber节点，其实是根据fiber节点的不同类型，通过不同的方式得到element结构
+ * @param {Lanes} renderLanes 更新的优先级
+ * @returns {Fiber|Fiber|*} 返回创建出来的fiber节点
  */
 function beginWork(
   current: Fiber | null, // 与本次循环主体(unitOfWork)对应的 current 树上的节点，即 workInProgress.alternate
   workInProgress: Fiber, // 本次循环主体(unitOfWork)，也即待处理的 Fiber 节点
   renderLanes: Lanes,
 ): Fiber | null {
-  // console.log('beginWork', current, workInProgress);
   /**
    * current为当前树的那个fiber节点
    * unitOfWork为 更新树 的那个fiber节点
@@ -3828,13 +3828,25 @@ function beginWork(
     }
   }
 
-  // 判断当前fiber节点是否存在，若有current，说明已存在该节点，直接更新；若不存在，则mount
-  // 初始render()调用，current其实是存在的，因为current指向到了树的根节点
+  /**
+   * 判断当前正在展示的fiber节点是否存在，若存在则进入到if逻辑中，若不存在则进入到后面的创建逻辑
+   * 若前后两个fiber节点都存在，则通过对比两个fiber节点的props, fiber.type或lanes中的更新等，判断是否有变化，
+   * 若没有变化，则 didReceiveUpdate 为false，反之则为true，当fiber没有变化时，
+   * 尝试原封不动地复用子 Fiber 节点或是直接“剪枝”：bailoutOnAlreadyFinishedWork 方法
+   */
+  /**
+   * 在调用render()方法初始渲染节点，current和workInProgress分别指向的是两棵树的根节点，
+   * 即current和workInProgress都不为null，但两者的props都是相等的，都为null；
+   * 而从根节点往下，current就一直为null，只有workInProgress一直有值；
+   */
+  /**
+   * 后续在进入到update节点，这就得根据实际情况判断了，若 workInProgress 是新增的节点，current肯定是没有；
+   * 若 workInProgress 是修改的或将被删除的节点，current则是存在的
+   */
   if (current !== null) {
     // update阶段
     const oldProps = current.memoizedProps; // 初始时为null
     const newProps = workInProgress.pendingProps; // 初始时为null
-    console.log('workInProgress', workInProgress, oldProps, newProps);
 
     if (
       oldProps !== newProps ||

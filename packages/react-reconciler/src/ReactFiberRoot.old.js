@@ -70,7 +70,7 @@ function FiberRootNode(
   identifierPrefix,
   onRecoverableError,
 ) {
-  this.tag = tag;
+  this.tag = tag; // fiber节点的类型(0|1)，0是之前legacy模式，1是现在最新的Concurrent模式，React18中是1
   this.containerInfo = containerInfo; // 该fiber对应的真实dom节点
   this.pendingChildren = null;
 
@@ -78,7 +78,7 @@ function FiberRootNode(
    * 当前应用root节点对应的Fiber对象
    * @type {null}
    */
-  this.current = null;
+  this.current = null; // current指针，指向哪棵fiber树的根节点
   this.pingCache = null;
   this.finishedWork = null;
   this.timeoutHandle = noTimeout;

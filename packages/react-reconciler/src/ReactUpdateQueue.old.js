@@ -173,7 +173,7 @@ export function initializeUpdateQueue<State>(fiber: Fiber): void {
     firstBaseUpdate: null, // 更新阶段中由于优先级不够导致被忽略的第一个 Update 对象
     lastBaseUpdate: null, // 更新阶段中由于优先级不够导致被忽略的最后一个 Update 对象
     shared: {
-      pending: null,
+      pending: null, // 更新操作的循环链表，所有的更新操作都暂时放到这里
       interleaved: null,
       lanes: NoLanes,
     },
