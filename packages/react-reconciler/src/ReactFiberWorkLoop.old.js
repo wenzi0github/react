@@ -471,10 +471,9 @@ export function requestUpdateLane(fiber: Fiber): Lane {
   // Special cases
   // 获取到当前渲染的模式：sync mode（同步模式） 或 concurrent mode（并发模式）
   const mode = fiber.mode;
-  console.log('fiber.mode', fiber.mode, workInProgressRootRenderLanes);
   if ((mode & ConcurrentMode) === NoMode) {
     // 检查当前渲染模式是不是并发模式，等于NoMode表示不是，则使用同步模式渲染
-    // React18中默认使用的并发模式，
+    // React18中默认使用的并发模式，不走这里
     return (SyncLane: Lane);
   } else if (
     !deferRenderPhaseUpdateToNextBatch &&
@@ -537,6 +536,7 @@ export function requestUpdateLane(fiber: Fiber): Lane {
   // TODO: Move this type conversion to the event priority module.
   // 在react的内部事件中触发的更新事件，比如：onClick等，会在触发事件的时候为当前事件设置一个优先级，可以直接拿来使用
   const updateLane: Lane = (getCurrentUpdatePriority(): any);
+  console.log('requestUpdateLane updateLane', updateLane);
   if (updateLane !== NoLane) {
     return updateLane;
   }
@@ -549,6 +549,7 @@ export function requestUpdateLane(fiber: Fiber): Lane {
   // TODO: Move this type conversion to the event priority module.
   // 在react的外部事件中触发的更新事件，比如：setTimeout等，会在触发事件的时候为当前事件设置一个优先级，可以直接拿来使用
   const eventLane: Lane = (getCurrentEventPriority(): any);
+  console.log('requestUpdateLane eventLane', eventLane);
   return eventLane;
 }
 
@@ -569,7 +570,7 @@ function requestRetryLane(fiber: Fiber) {
 /**
  * 更新fiber
  * @param {Fiber} fiber 初始化时，该fiber节点为hostfiber，没有其他子fiber节点，只有在updateQueue队列中有element结构
- * @param {Lane} lane
+ * @param {Lane} lane 更新的操作和优先级，初始render()时为16，0b10000
  * @param {number} eventTime
  * @returns {null|FiberRoot}
  */
@@ -588,9 +589,9 @@ export function scheduleUpdateOnFiber(
   }
 
   /**
-   * 当前fiber节点添加传入 lane 优先级，并将父级节点到根节点的childLanes添加lane，表明有子节点需要更新，最后返回该HostRoot节点，
-   * 若HostRoot节点为null，则直接返回
-   * 不过在执行render()初始化时，fiber节点本身就是HostRoot节点
+   * 当前fiber节点添加传入 lane 优先级，并将父级节点到根节点的childLanes添加lane，表明有子节点需要更新，最后返回FiberRootNode，
+   * 若 FiberRootNode 节点为null，可能当前fiber节点不在整体的fiber树中，直接返回
+   * 在执行render()初始化时，fiber节点是 HostRoot 节点
    */
   const root = markUpdateLaneFromFiberToRoot(fiber, lane);
   if (root === null) {
@@ -695,6 +696,7 @@ export function scheduleUpdateOnFiber(
       }
     }
 
+    // 此时root的childLanes中有传入的lane
     ensureRootIsScheduled(root, eventTime);
     if (
       lane === SyncLane &&
@@ -753,7 +755,7 @@ function markUpdateLaneFromFiberToRoot(
 ): FiberRoot | null {
   // Update the source fiber's lanes
   sourceFiber.lanes = mergeLanes(sourceFiber.lanes, lane); // 将传入的lane合并到fiber节点上
-  let alternate = sourceFiber.alternate; // 另一个fiber树，若是在调用render()初始化是，alternate为null
+  let alternate = sourceFiber.alternate; // 另一个fiber树，若是在调用render()初始化时，alternate为null
   if (alternate !== null) {
     // 若alternate不为空，说明是更新节点，这里将另一棵树也更新优先级
     alternate.lanes = mergeLanes(alternate.lanes, lane);
@@ -787,7 +789,7 @@ function markUpdateLaneFromFiberToRoot(
     node = parent;
     parent = parent.return;
   }
-  // 当parent为空时，node正常情况下是 HostRoot 类型
+  // 当parent为空时，node正常情况下是 HostRoot 类型，返回node节点的stateNode，即FiberRootNode
   if (node.tag === HostRoot) {
     const root: FiberRoot = node.stateNode;
     return root;
@@ -1033,6 +1035,11 @@ function performConcurrentWorkOnRoot(root, didTimeout) {
 
   // Determine the next lanes to work on, using the fields stored
   // on the root.
+  /**
+   * 根据当前 root与 workInProgressRoot 是否相等，决定用哪个lanes，
+   * 初始render时()，workInProgressRoot为null，root和workInProgressRoot不相等，因此传入的是NoLanes
+   * @type {Lanes}
+   */
   let lanes = getNextLanes(
     root,
     root === workInProgressRoot ? workInProgressRootRenderLanes : NoLanes,
@@ -1413,7 +1420,7 @@ function performSyncWorkOnRoot(root) {
 
   flushPassiveEffects();
 
-  let lanes = getNextLanes(root, NoLanes);
+  let lanes = getNextLanes(root, NoLanes); // lanes为16，即0b10000
   if (!includesSomeLane(lanes, SyncLane)) {
     // There's no remaining sync work left.
     ensureRootIsScheduled(root, now());
@@ -1959,7 +1966,6 @@ function workLoopSync() {
 }
 
 function renderRootConcurrent(root: FiberRoot, lanes: Lanes) {
-  console.log('renderRootConcurrent', root);
   const prevExecutionContext = executionContext;
   executionContext |= RenderContext;
   const prevDispatcher = pushDispatcher();

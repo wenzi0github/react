@@ -423,8 +423,6 @@ function getStateFromUpdate<State>(
 ): any {
   switch (update.tag) {
     case ReplaceState: {
-      // todo: 类似于 Function Componpent中的useState()?
-      // const [state, setState] = useState();
       const payload = update.payload;
       if (typeof payload === 'function') {
         // Updater function
@@ -464,6 +462,7 @@ function getStateFromUpdate<State>(
       let partialState; // 临时变量，用于存储传入进来的新state结果，方便最后进行assign合并处理
       if (typeof payload === 'function') {
         // Updater function
+        // 若 payload 是函数，则执行该函数
         if (__DEV__) {
           enterDisallowedContextReadInDEV();
         }
@@ -485,7 +484,7 @@ function getStateFromUpdate<State>(
         }
       } else {
         // Partial state object
-        // 若是普通object的变量，则直接赋值
+        // 若 payload 是变量，则直接赋值
         partialState = payload;
       }
       if (partialState === null || partialState === undefined) {
@@ -497,8 +496,8 @@ function getStateFromUpdate<State>(
       // 与之前的state数据进行合并
       /**
        * 初始render()时，payload为 { element }，会给到变量 partialState
-       * prevState为 { cache, element: null, isDehydrated: false, pendingSuspenseBoundaries: null, transitions: null }
-       * 两者合并时，相当于合并了 element 属性
+       * prevState 为 { cache, element: null, isDehydrated: false, pendingSuspenseBoundaries: null, transitions: null }
+       * 两者合并时，相当于给 prevState 合并了一个 element 属性
        */
       return assign({}, prevState, partialState);
     }
@@ -536,7 +535,7 @@ export function processUpdateQueue<State>(
   let lastBaseUpdate = queue.lastBaseUpdate; // 更新链表的最后的那个节点
 
   // Check if there are pending updates. If so, transfer them to the base queue.
-  // 检测queue中是否有挂起的更新，若存在，则将其转义到 firstBaseUpdate 上，并清空刚才的链表
+  // 检测是否存在将要进行的更新，若存在，则将其转义到 firstBaseUpdate 上，并清空刚才的链表
   let pendingQueue = queue.shared.pending;
   if (pendingQueue !== null) {
     queue.shared.pending = null;
@@ -554,8 +553,8 @@ export function processUpdateQueue<State>(
 
     /**
      * 将 pendingQueue 拼接到 更新链表 queue.firstBaseUpdate 的后面
-     * 1. 更新链表的最后那个节点为空，说明当前更新链表为空，将要更新的首节点 firstPendingUpdate 给到 firstBaseUpdate即可；
-     * 2. 若更新链表的尾节点不为，则将要更新的首节点 firstPendingUpdate 拼接到 lastBaseUpdate 的后面；
+     * 1. 更新链表的最后那个节点为空，说明当前更新链表为空，将，要更新的首节点 firstPendingUpdate 给到 firstBaseUpdate即可；
+     * 2. 若更新链表的尾节点不为空，则将要更新的首节点 firstPendingUpdate 拼接到 lastBaseUpdate 的后面；
      * 3. 拼接完毕后，lastBaseUpdate 指向到新的更新链表最后的那个节点；
      */
     // Append pending updates to base queue
@@ -573,7 +572,7 @@ export function processUpdateQueue<State>(
     // TODO: Pass `current` as argument
     /**
      * 若workInProgress对应的在current树的那个fiber节点的更新队列，与当前的不一样，
-     * 则我们将上面「将要更新」的链表的头指针和尾指针给到基本更新队列中，
+     * 则我们将上面「将要更新」的链表的头指针和尾指针给到current节点的更新队列中，
      * 拼接方式与上面的一样
      */
     const current = workInProgress.alternate;
@@ -581,6 +580,9 @@ export function processUpdateQueue<State>(
       // This is always non-null on a ClassComponent or HostRoot
       const currentQueue: UpdateQueue<State> = (current.updateQueue: any);
       const currentLastBaseUpdate = currentQueue.lastBaseUpdate;
+
+      // 若current更新链表的最后那个节点与当前将要更新的链表的最后那个节点不一样
+      // 则，把将要更新的链表也拼接到current中
       if (currentLastBaseUpdate !== lastBaseUpdate) {
         if (currentLastBaseUpdate === null) {
           currentQueue.firstBaseUpdate = firstPendingUpdate;
@@ -593,12 +595,25 @@ export function processUpdateQueue<State>(
   }
 
   /**
-   * 进行到这里，render()初始更新时，放在 queue.shared.pending 中的element结构，
-   * 就已经放到 queue.firstBaseUpdate 里了
+   * 进行到这里，render()初始更新时，放在 queue.shared.pending 中的update节点（里面存放着element结构），
+   * 就已经放到 queue.firstBaseUpdate 里了，
+   * 因此 firstBaseUpdate 里肯定存放了一个 update 节点，一定不为空，进入到else的逻辑中
    */
   // These values may change as we process the queue.
   if (firstBaseUpdate !== null) {
     // Iterate through the list of updates to compute the result.
+    // 迭代更新列表以计算结果
+
+    /**
+     * newState 的默认值：
+     * {
+     *  cache: {controller: AbortController, data: Map(0), refCount: 1}
+     *  element: null
+     *  isDehydrated: false
+     *  pendingSuspenseBoundaries: null
+     *  transitions: null
+     * }
+     */
     let newState = queue.baseState;
     // TODO: Don't need to accumulate this. Instead, we can remove renderLanes
     // from the original lanes.
@@ -612,6 +627,9 @@ export function processUpdateQueue<State>(
     do {
       const updateLane = update.lane;
       const updateEventTime = update.eventTime;
+      // console.log('isSubsetOfLanes(renderLanes, updateLane)', renderLanes, updateLane, isSubsetOfLanes(renderLanes, updateLane));
+      // renderLanes 和 updateLane一样，因此 isSubsetOfLanes(renderLanes, updateLane) 的结果为true，
+      // 而这里再取反一次，则为false，会进入到 else 的逻辑中
       if (!isSubsetOfLanes(renderLanes, updateLane)) {
         // Priority is insufficient. Skip this update. If this is the first
         // skipped update, the previous update/state is the new base
@@ -639,6 +657,7 @@ export function processUpdateQueue<State>(
         // 初始render()时会走这里
 
         if (newLastBaseUpdate !== null) {
+          // 若更新链表不为空时，则再往后拼接一个 update 节点
           const clone: Update<State> = {
             eventTime: updateEventTime,
             // This update is going to be committed so we never want uncommit
@@ -657,12 +676,15 @@ export function processUpdateQueue<State>(
 
         // Process this update.
         /**
-         * render()时 newState 的默认值
-         * cache: {controller: AbortController, data: Map(0), refCount: 1}
-         * element: null
-         * isDehydrated: false
-         * pendingSuspenseBoundaries: null
-         * transitions: null
+         * render()时 newState 的默认值：
+         * {
+         *  cache: {controller: AbortController, data: Map(0), refCount: 1}
+         *  element: null
+         *  isDehydrated: false
+         *  pendingSuspenseBoundaries: null
+         *  transitions: null
+         * }
+         * 执行 getStateFromUpdate() 后，则会将 update 中的 element 给到 newState 中
          */
         newState = getStateFromUpdate(
           workInProgress,
@@ -672,6 +694,7 @@ export function processUpdateQueue<State>(
           props,
           instance,
         );
+        console.log('%cgetStateFromUpdate', 'background-color: red', newState);
         const callback = update.callback;
         if (
           callback !== null &&

@@ -358,6 +358,11 @@ export function updateContainer(
   // 若是初次执行时，current树只有hostFiber节点，没有其他的
   const current = container.current;
   const eventTime = requestEventTime();
+
+  /**
+   * 初始render()时，得到的是getCurrentEventPriority()中的值，为16，0b10000
+   * @type {Lane}
+   */
   const lane = requestUpdateLane(current);
 
   if (enableSchedulingProfiler) {

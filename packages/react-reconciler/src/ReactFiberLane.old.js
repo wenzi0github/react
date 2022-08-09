@@ -200,9 +200,15 @@ function getHighestPriorityLanes(lanes: Lanes | Lane): Lanes {
   }
 }
 
+/**
+ *
+ * @param root
+ * @param wipLanes
+ * @returns {Lanes}
+ */
 export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
   // Early bailout if there's no pending work left.
-  const pendingLanes = root.pendingLanes;
+  const pendingLanes = root.pendingLanes; // 初始render()时为16，0b10000
   if (pendingLanes === NoLanes) {
     // 没有需要更新的任务，直接结束
     return NoLanes;
@@ -253,14 +259,17 @@ export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
     return NoLanes;
   }
 
+  console.log('wipLanes', wipLanes);
+
   // If we're already in the middle of a render, switching lanes will interrupt
   // it and we'll lose our progress. We should only do this if the new lanes are
   // higher priority.
   /**
    * 若从上面找到了nextLanes，则与当前正在执行多任务进行对比，
-   * wipLanes表示正在执行任务的lane，nextLanes是本次需要执行任务的lane，
+   * wipLanes 表示正在执行任务的lane，nextLanes是本次需要执行任务的lane，
    * 若新任务比正在执行的任务的优先级低，则不用管他，继续执行即可；
    * 若新任务比正在执行的优先级高，则取消当前任务，先执行新任务；
+   * 初始render()时，wipLanes为NoLanes
    */
   if (
     wipLanes !== NoLanes &&

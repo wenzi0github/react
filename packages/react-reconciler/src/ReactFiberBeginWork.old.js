@@ -3563,6 +3563,7 @@ function checkScheduledUpdateOrContext(
   // Before performing an early bailout, we must check if there are pending
   // updates or context.
   const updateLanes = current.lanes;
+  console.log('checkScheduledUpdateOrContext', updateLanes, renderLanes);
   if (includesSomeLane(updateLanes, renderLanes)) {
     return true;
   }
@@ -3805,6 +3806,7 @@ function beginWork(
   workInProgress: Fiber, // 本次循环主体(unitOfWork)，也即待处理的 Fiber 节点
   renderLanes: Lanes,
 ): Fiber | null {
+  console.log('beginWork renderLanes', renderLanes);
   /**
    * current为当前树的那个fiber节点
    * unitOfWork为 更新树 的那个fiber节点
@@ -3857,13 +3859,14 @@ function beginWork(
       // If props or context changed, mark the fiber as having performed work.
       // This may be unset if the props are determined to be equal later (memo).
       // 如果 props 或 context 发生变化，将 Fiber 标记为需要更新
-      didReceiveUpdate = true;
+      didReceiveUpdate = true; // 为了判断是否可以提前结束，若current存在，且didReceiveUpdate为false，说明前后没有变化，可以提前结束
     } else {
       // Neither props nor legacy context changes. Check if there's a pending
       // update or context change.
       // props和上下文都没有改变，检查是否有挂起的更新或上下文更改。
       /**
        * 判断current的lanes和renderLanes是否有重合，若有则需要更新
+       * 初始render时，current.lanes和renderLanes是一样的，则返回true
        */
       const hasScheduledUpdateOrContext = checkScheduledUpdateOrContext(
         current,
@@ -3885,6 +3888,7 @@ function beginWork(
         );
       }
       if ((current.flags & ForceUpdateForLegacySuspense) !== NoFlags) {
+        // 传统模式下，当前节点是否要强制更新
         // This is a special case that only exists for legacy mode.
         // See https://github.com/facebook/react/pull/19216.
         didReceiveUpdate = true;
@@ -3893,6 +3897,11 @@ function beginWork(
         // nor legacy context. Set this to false. If an update queue or context
         // consumer produces a changed value, it will set this to true. Otherwise,
         // the component will assume the children have not changed and bail out.
+        /**
+         * 本来打算对该fiber节点进行更新的，但该fiber的props和上下文都没有改变，因此将didReceiveUpdate设置为false，
+         * 若更新队列或者上下文使用者生成了更改的值，会将其设置为true。否则，该组件会设置children没有更新并退出
+         * @type {boolean}
+         */
         didReceiveUpdate = false;
       }
     }
@@ -3921,6 +3930,13 @@ function beginWork(
   // the update queue. However, there's an exception: SimpleMemoComponent
   // sometimes bails out later in the begin phase. This indicates that we should
   // move this assignment out of the common path and into each branch.
+  /**
+   * 在进入开始阶段之前，请清除挂起的更新优先级。
+   * TODO：这假设我们将评估组件并处理更新队列。
+   * 然而，有一个例外：SimpleMemoComponent有时会在开始阶段的晚些时候退出。
+   * 这表明我们应该将此分配从公共路径移到每个分支中。
+   * @type {Lanes}
+   */
   workInProgress.lanes = NoLanes;
 
   // 根据 workInProgress 不同的tag，创建不同的fiber节点

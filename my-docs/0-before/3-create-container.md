@@ -183,4 +183,4 @@ export function initializeUpdateQueue<State>(fiber: Fiber): void {
 
 ## 5. 总结
 
-这篇文章我们主要梳理了下 createContainer()函数的操作，主要是创建了 FiberRootNode 和 hostFiber 两个节点。基本的架构搭建好了，后续就可以调用 render()方法来初始整个 fiber 树了。
+这篇文章我们主要梳理了下 createContainer()函数的操作，创建了 FiberRootNode 和 hostFiber 两个节点。基本的架构搭建好了，后续就可以调用 render()方法来初始整个 fiber 树了。
