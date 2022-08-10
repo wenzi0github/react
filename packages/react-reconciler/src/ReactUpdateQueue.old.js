@@ -510,7 +510,7 @@ function getStateFromUpdate<State>(
 }
 
 /**
- *
+ * 操作updateQueue的队列
  * @param workInProgress
  * @param props
  * @param instance
@@ -523,6 +523,7 @@ export function processUpdateQueue<State>(
   renderLanes: Lanes,
 ): void {
   // This is always non-null on a ClassComponent or HostRoot
+  // 在 HostRoot和 ClassComponent的fiber节点中，updateQueue不可能为null
   const queue: UpdateQueue<State> = (workInProgress.updateQueue: any);
 
   hasForceUpdate = false;
@@ -531,6 +532,11 @@ export function processUpdateQueue<State>(
     currentlyProcessingQueue = queue.shared;
   }
 
+  /**
+   * queue.shared.pending本身是一个环形链表，即使有一个节点，也会形成环形链表，
+   * 而且 queue.shared.pending 指向的是环形链表的最后一个节点，这里将其断开形成单向链表
+   * 单向链表的头指针存放到 firstBaseUpdate 中，最后一个节点则存放到 lastBaseUpdate 中
+   */
   let firstBaseUpdate = queue.firstBaseUpdate; // 更新链表的开始节点
   let lastBaseUpdate = queue.lastBaseUpdate; // 更新链表的最后的那个节点
 
@@ -571,7 +577,7 @@ export function processUpdateQueue<State>(
     // lists and take advantage of structural sharing.
     // TODO: Pass `current` as argument
     /**
-     * 若workInProgress对应的在current树的那个fiber节点的更新队列，与当前的不一样，
+     * 若workInProgress对应的在current的那个fiber节点，其更新队列的最后那个节点与当前的最后那个节点不一样，
      * 则我们将上面「将要更新」的链表的头指针和尾指针给到current节点的更新队列中，
      * 拼接方式与上面的一样
      */
@@ -597,7 +603,7 @@ export function processUpdateQueue<State>(
   /**
    * 进行到这里，render()初始更新时，放在 queue.shared.pending 中的update节点（里面存放着element结构），
    * 就已经放到 queue.firstBaseUpdate 里了，
-   * 因此 firstBaseUpdate 里肯定存放了一个 update 节点，一定不为空，进入到else的逻辑中
+   * 因此 firstBaseUpdate 里肯定存放了一个 update 节点，一定不为空，进入到 if 的逻辑中
    */
   // These values may change as we process the queue.
   if (firstBaseUpdate !== null) {
@@ -619,21 +625,32 @@ export function processUpdateQueue<State>(
     // from the original lanes.
     let newLanes = NoLanes;
 
-    let newBaseState = null;
-    let newFirstBaseUpdate = null;
-    let newLastBaseUpdate = null;
+    let newBaseState = null; // 执行链表中所有的操作后，得到的新结果
+
+    /**
+     * 下面的两个指针用来存放新的更新链表，
+     * 即 firstBaseUpdate 链表中，可能会存在一些优先级不够的update，
+     * 那么就将这些优先级不够的update节点，择出来重新存放，等待下次的操作
+     */
+    let newFirstBaseUpdate = null; // 新的更新链表的头指针
+    let newLastBaseUpdate = null; // 新的更新链表的尾指针
 
     let update = firstBaseUpdate;
     do {
       const updateLane = update.lane;
       const updateEventTime = update.eventTime;
-      // console.log('isSubsetOfLanes(renderLanes, updateLane)', renderLanes, updateLane, isSubsetOfLanes(renderLanes, updateLane));
+
       // renderLanes 和 updateLane一样，因此 isSubsetOfLanes(renderLanes, updateLane) 的结果为true，
       // 而这里再取反一次，则为false，会进入到 else 的逻辑中
       if (!isSubsetOfLanes(renderLanes, updateLane)) {
         // Priority is insufficient. Skip this update. If this is the first
         // skipped update, the previous update/state is the new base
         // update/state.
+        /**
+         * 当前的update操作的优先级不够。跳过此更新。
+         * 如果这是第一次跳过的更新，则先前的更新/状态为新的基本更新/状态。
+         * @type {{next: null, payload: *, eventTime: number, callback: null, tag: (0|1|2|3), lane: Lane}}
+         */
         const clone: Update<State> = {
           eventTime: updateEventTime,
           lane: updateLane,
@@ -645,9 +662,12 @@ export function processUpdateQueue<State>(
           next: null,
         };
         if (newLastBaseUpdate === null) {
+          // 还没有节点，这clone就是头结点
+          //
           newFirstBaseUpdate = newLastBaseUpdate = clone;
           newBaseState = newState;
         } else {
+          // 已经有节点了，直接向后拼接
           newLastBaseUpdate = newLastBaseUpdate.next = clone;
         }
         // Update the remaining priority in the queue.
@@ -657,7 +677,8 @@ export function processUpdateQueue<State>(
         // 初始render()时会走这里
 
         if (newLastBaseUpdate !== null) {
-          // 若更新链表不为空时，则再往后拼接一个 update 节点
+          // 若存储低优先级的更新链表不为空，则为了操作的完整性，同样将当前的update节点也拼接到后面
+          // 但初始render()渲染时，newLastBaseUpdate为空，走不到 if 这里
           const clone: Update<State> = {
             eventTime: updateEventTime,
             // This update is going to be committed so we never want uncommit
@@ -665,7 +686,7 @@ export function processUpdateQueue<State>(
             // this will never be skipped by the check above.
             lane: NoLane,
 
-            tag: update.tag, // 初始render()的tag为UpdateState，即为0
+            tag: update.tag,
             payload: update.payload,
             callback: update.callback,
 
@@ -694,8 +715,8 @@ export function processUpdateQueue<State>(
           props,
           instance,
         );
-        console.log('%cgetStateFromUpdate', 'background-color: red', newState);
         const callback = update.callback;
+        console.log('%cgetStateFromUpdate', 'background-color: red', newState, callback);
         if (
           callback !== null &&
           // If the update was already committed, we should not queue its
@@ -711,8 +732,13 @@ export function processUpdateQueue<State>(
           }
         }
       }
-      update = update.next;
+      update = update.next; // 只有一个update节点，next为null，直接break，跳出循环
       if (update === null) {
+        /**
+         * 在上面将 queue.shared.pending 放到firstBaseUpdate时，
+         * queue.shared.pending就已经重置为null了
+         * @type {Update<State>|null|*}
+         */
         pendingQueue = queue.shared.pending;
         if (pendingQueue === null) {
           break;
@@ -748,7 +774,7 @@ export function processUpdateQueue<State>(
      * shared: { pending: null, interleaved: null, lanes: 0 }
      */
 
-    // https://mat1.gtimg.com/qqcdn/tupload/1659687672451.png
+    // workInProgress.updateQueue的数据结构： https://mat1.gtimg.com/qqcdn/tupload/1659687672451.png
 
     // Interleaved updates are stored on a separate queue. We aren't going to
     // process them during this render, but we do need to track which lanes
