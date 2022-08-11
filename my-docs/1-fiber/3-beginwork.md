@@ -108,7 +108,314 @@ export function cloneUpdateQueue<State>(
 
 在初始render()阶段，workInProgress.updateQueue.shared.pending中只有一个update节点，这个节点中存放着一个element结构，通过一通的运算后，就可以得到这个element结构，然后将其放到了 workInProgress.updateQueue.baseState 中。
 
+源码比较长，可以直接 [点击链接](https://github.com/wenzi0github/react/blob/55a685a8db632780436b52c5ebc6d968644a8eca/packages/react-reconciler/src/ReactUpdateQueue.old.js#L519) 去GitHub上查看。
 
+```javascript
+/**
+ * 操作 updateQueue 的队列
+ * @param workInProgress
+ * @param props
+ * @param instance
+ * @param renderLanes
+ */
+export function processUpdateQueue<State>(
+  workInProgress: Fiber,
+  props: any,
+  instance: any,
+  renderLanes: Lanes,
+): void {
+  // This is always non-null on a ClassComponent or HostRoot
+  // 在 HostRoot和 ClassComponent的fiber节点中，updateQueue不可能为null
+  const queue: UpdateQueue<State> = (workInProgress.updateQueue: any);
+
+  hasForceUpdate = false;
+
+  /**
+   * queue.shared.pending 是一个环形链表，即使有一个节点，自身也会形成环形链表，
+   * 而且 queue.shared.pending 指向的是环形链表的最后一个节点，这里需要将其断开形成单向链表，
+   * 然后把单向链表的头指针存放到 firstBaseUpdate 中，最后一个节点则存放到 lastBaseUpdate 中
+   */
+  let firstBaseUpdate = queue.firstBaseUpdate; // 更新链表的开始节点
+  let lastBaseUpdate = queue.lastBaseUpdate; // 更新链表的最后的那个节点
+
+  // Check if there are pending updates. If so, transfer them to the base queue.
+  // 检测是否存在将要进行的更新，若存在，则将其转义到 firstBaseUpdate 上，并清空刚才的链表
+  let pendingQueue = queue.shared.pending;
+  if (pendingQueue !== null) {
+    queue.shared.pending = null;
+
+    // The pending queue is circular. Disconnect the pointer between first
+    // and last so that it's non-circular.
+    /**
+     * 若pending queue 是一个环形链表，则将第一个和最后一个节点断开，
+     * 环形链表默认指向的是最后一个节点，因此 pendingQueue 指向的就是最后一个节点，
+     * pendingQueue.next(lastPendingUpdate.next)就是第一个节点了
+     */
+    const lastPendingUpdate = pendingQueue; // 环形链表的最后一个节点
+    const firstPendingUpdate = lastPendingUpdate.next; // 环形链表的第一个节点
+    lastPendingUpdate.next = null; // 最后一个节点与第一个节点断开
+
+    /**
+     * 将 pendingQueue 拼接到 更新链表 queue.firstBaseUpdate 的后面
+     * 1. 更新链表的最后那个节点为空，说明当前更新链表为空，将，要更新的首节点 firstPendingUpdate 给到 firstBaseUpdate即可；
+     * 2. 若更新链表的尾节点不为空，则将要更新的首节点 firstPendingUpdate 拼接到 lastBaseUpdate 的后面；
+     * 3. 拼接完毕后，lastBaseUpdate 指向到新的更新链表最后的那个节点；
+     */
+    // Append pending updates to base queue
+    if (lastBaseUpdate === null) {
+      firstBaseUpdate = firstPendingUpdate;
+    } else {
+      lastBaseUpdate.next = firstPendingUpdate;
+    }
+    lastBaseUpdate = lastPendingUpdate;
+
+    // If there's a current queue, and it's different from the base queue, then
+    // we need to transfer the updates to that queue, too. Because the base
+    // queue is a singly-linked list with no cycles, we can append to both
+    // lists and take advantage of structural sharing.
+    // TODO: Pass `current` as argument
+    /**
+     * 若workInProgress对应的在current的那个fiber节点，其更新队列的最后那个节点与当前的最后那个节点不一样，
+     * 则我们将上面「将要更新」的链表的头指针和尾指针给到current节点的更新队列中，
+     * 拼接方式与上面的一样
+     */
+    const current = workInProgress.alternate;
+    if (current !== null) {
+      // This is always non-null on a ClassComponent or HostRoot
+      const currentQueue: UpdateQueue<State> = (current.updateQueue: any);
+      const currentLastBaseUpdate = currentQueue.lastBaseUpdate;
+
+      // 若current更新链表的最后那个节点与当前将要更新的链表的最后那个节点不一样
+      // 则，把将要更新的链表也拼接到current中
+      if (currentLastBaseUpdate !== lastBaseUpdate) {
+        if (currentLastBaseUpdate === null) {
+          currentQueue.firstBaseUpdate = firstPendingUpdate;
+        } else {
+          currentLastBaseUpdate.next = firstPendingUpdate;
+        }
+        currentQueue.lastBaseUpdate = lastPendingUpdate;
+      }
+    }
+  }
+
+  /**
+   * 进行到这里，render()初始更新时，放在 queue.shared.pending 中的update节点（里面存放着element结构），
+   * 就已经放到 queue.firstBaseUpdate 里了，
+   * 因此 firstBaseUpdate 里肯定存放了一个 update 节点，一定不为空，进入到 if 的逻辑中
+   */
+  // These values may change as we process the queue.
+  if (firstBaseUpdate !== null) {
+    // Iterate through the list of updates to compute the result.
+    // 迭代更新列表以计算结果
+
+    /**
+     * newState 的默认值：
+     * {
+     *  cache: {controller: AbortController, data: Map(0), refCount: 1}
+     *  element: null
+     *  isDehydrated: false
+     *  pendingSuspenseBoundaries: null
+     *  transitions: null
+     * }
+     */
+    let newState = queue.baseState;
+    // TODO: Don't need to accumulate this. Instead, we can remove renderLanes
+    // from the original lanes.
+    let newLanes = NoLanes;
+
+    let newBaseState = null; // 执行链表中所有的操作后，得到的新结果
+
+    /**
+     * 下面的两个指针用来存放低优先级的更新链表，
+     * 即 firstBaseUpdate 链表中，可能会存在一些优先级不够的update，
+     * 若存在低优先级的update，则将其拼接到 newFirstBaseUpdate 里，
+     * 同时，既然存在低优先级的任务，为了保证整个更新的完整性，也会将已经执行的update也放到这个新链表中，
+     * 不过这里只存放update执行后的结果，没必要每次都执行。
+     */
+    let newFirstBaseUpdate = null; // 新的更新链表的头指针
+    let newLastBaseUpdate = null; // 新的更新链表的尾指针
+
+    let update = firstBaseUpdate;
+    do {
+      const updateLane = update.lane;
+      const updateEventTime = update.eventTime;
+
+      /**
+       * 判断 updateLane 是否是 renderLanes 的子集
+       * 在初始render()时，renderLanes 和 updateLane一样，因此 isSubsetOfLanes(renderLanes, updateLane) 的结果为true，
+       * 而这里再取反一次，则为false，会进入到 else 的逻辑中
+       */
+      if (!isSubsetOfLanes(renderLanes, updateLane)) {
+        // Priority is insufficient. Skip this update. If this is the first
+        // skipped update, the previous update/state is the new base
+        // update/state.
+        /**
+         * 当前的update操作的优先级不够。跳过此更新。
+         * 如果这是第一次跳过的更新，则先前的更新/状态为新的基本更新/状态。
+         * @type {{next: null, payload: *, eventTime: number, callback: null, tag: (0|1|2|3), lane: Lane}}
+         */
+        const clone: Update<State> = {
+          eventTime: updateEventTime,
+          lane: updateLane,
+
+          tag: update.tag,
+          payload: update.payload,
+          callback: update.callback,
+
+          next: null,
+        };
+        if (newLastBaseUpdate === null) {
+          // 还没有节点，这clone就是头结点
+          //
+          newFirstBaseUpdate = newLastBaseUpdate = clone;
+          newBaseState = newState;
+        } else {
+          // 已经有节点了，直接向后拼接
+          newLastBaseUpdate = newLastBaseUpdate.next = clone;
+        }
+        // Update the remaining priority in the queue.
+        newLanes = mergeLanes(newLanes, updateLane);
+      } else {
+        // This update does have sufficient priority.
+        // 初始render()时会走这里
+
+        if (newLastBaseUpdate !== null) {
+          /**
+           * 若存储低优先级的更新链表不为空，则为了操作的完整性，即使当前update会执行，
+           * 也将当前的update节点也拼接到后面，
+           * 但初始render()渲染时，newLastBaseUpdate为空，走不到 if 这里
+           */
+          const clone: Update<State> = {
+            eventTime: updateEventTime,
+            // This update is going to be committed so we never want uncommit
+            // it. Using NoLane works because 0 is a subset of all bitmasks, so
+            // this will never be skipped by the check above.
+            /**
+             * 翻译：这次update将要被提交更新，因此后续我们不希望取消这个提交。
+             * 使用 NoLane 这个是可行的，因为0是任何掩码的子集，
+             * 所以上面 if 的检测`isSubsetOfLanes(renderLanes, updateLane)`，永远都会为真，
+             * 该update永远不会被作为低优先级进行跳过，每次都会执行
+             */
+            lane: NoLane,
+
+            tag: update.tag,
+            payload: update.payload,
+            callback: update.callback,
+
+            next: null,
+          };
+          newLastBaseUpdate = newLastBaseUpdate.next = clone;
+        }
+
+        // Process this update.
+        /**
+         * render()时 newState 的默认值：
+         * {
+         *  cache: {controller: AbortController, data: Map(0), refCount: 1}
+         *  element: null
+         *  isDehydrated: false
+         *  pendingSuspenseBoundaries: null
+         *  transitions: null
+         * }
+         * 执行 getStateFromUpdate() 后，则会将 update 中的 element 给到 newState 中
+         */
+        newState = getStateFromUpdate(
+          workInProgress,
+          queue,
+          update,
+          newState,
+          props,
+          instance,
+        );
+        const callback = update.callback;
+        if (
+          callback !== null &&
+          // If the update was already committed, we should not queue its
+          // callback again.
+          update.lane !== NoLane
+        ) {
+          workInProgress.flags |= Callback;
+          const effects = queue.effects;
+          if (effects === null) {
+            queue.effects = [update];
+          } else {
+            effects.push(update);
+          }
+        }
+      }
+      update = update.next; // 初始render()时，只有一个update节点，next为null，直接break，跳出循环
+      if (update === null) {
+        /**
+         * 在上面将 queue.shared.pending 放到firstBaseUpdate时，
+         * queue.shared.pending就已经重置为null了
+         * @type {Update<State>|null|*}
+         */
+        pendingQueue = queue.shared.pending;
+        if (pendingQueue === null) {
+          break;
+        } else {
+          // An update was scheduled from inside a reducer. Add the new
+          // pending updates to the end of the list and keep processing.
+          const lastPendingUpdate = pendingQueue;
+          // Intentionally unsound. Pending updates form a circular list, but we
+          // unravel them when transferring them to the base queue.
+          const firstPendingUpdate = ((lastPendingUpdate.next: any): Update<State>);
+          lastPendingUpdate.next = null;
+          update = firstPendingUpdate;
+          queue.lastBaseUpdate = lastPendingUpdate;
+          queue.shared.pending = null;
+        }
+      }
+    } while (true);
+
+    if (newLastBaseUpdate === null) {
+      newBaseState = newState;
+    }
+
+    queue.baseState = ((newBaseState: any): State);
+    queue.firstBaseUpdate = newFirstBaseUpdate;
+    queue.lastBaseUpdate = newLastBaseUpdate;
+
+    /**
+     * 经过上面的操作，queue（即 workInProgress.updateQueue ）为：
+     * baseState: { element: element结构, isDehydrated: false }
+     * effects: null,
+     * firstBaseUpdate: null,
+     * lastBaseUpdate: null,
+     * shared: { pending: null, interleaved: null, lanes: 0 }
+     */
+
+    // workInProgress.updateQueue的数据结构： https://mat1.gtimg.com/qqcdn/tupload/1659687672451.png
+
+    // Interleaved updates are stored on a separate queue. We aren't going to
+    // process them during this render, but we do need to track which lanes
+    // are remaining.
+    const lastInterleaved = queue.shared.interleaved;
+    if (lastInterleaved !== null) {
+      let interleaved = lastInterleaved;
+      do {
+        newLanes = mergeLanes(newLanes, interleaved.lane);
+        interleaved = ((interleaved: any).next: Update<State>);
+      } while (interleaved !== lastInterleaved);
+    } else if (firstBaseUpdate === null) {
+      // `queue.lanes` is used for entangling transitions. We can set it back to
+      // zero once the queue is empty.
+      queue.shared.lanes = NoLanes;
+    }
+
+    // Set the remaining expiration time to be whatever is remaining in the queue.
+    // This should be fine because the only two other things that contribute to
+    // expiration time are props and context. We're already in the middle of the
+    // begin phase by the time we start processing the queue, so we've already
+    // dealt with the props. Context in components that specify
+    // shouldComponentUpdate is tricky; but we'll have to account for
+    // that regardless.
+    markSkippedUpdateLanes(newLanes);
+    workInProgress.lanes = newLanes;
+    workInProgress.memoizedState = newState;
+  }
+}
+```
 
 ### 3.2 FunctionComponent
 

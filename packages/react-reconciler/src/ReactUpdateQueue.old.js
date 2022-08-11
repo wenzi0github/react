@@ -628,9 +628,11 @@ export function processUpdateQueue<State>(
     let newBaseState = null; // 执行链表中所有的操作后，得到的新结果
 
     /**
-     * 下面的两个指针用来存放新的更新链表，
+     * 下面的两个指针用来存放低优先级的更新链表，
      * 即 firstBaseUpdate 链表中，可能会存在一些优先级不够的update，
-     * 那么就将这些优先级不够的update节点，择出来重新存放，等待下次的操作
+     * 若存在低优先级的update，则将其拼接到 newFirstBaseUpdate 里，
+     * 同时，既然存在低优先级的任务，为了保证整个更新的完整性，也会将已经执行的update也放到这个新链表中，
+     * 不过这里只存放update执行后的结果，没必要每次都执行。
      */
     let newFirstBaseUpdate = null; // 新的更新链表的头指针
     let newLastBaseUpdate = null; // 新的更新链表的尾指针
@@ -641,7 +643,8 @@ export function processUpdateQueue<State>(
       const updateEventTime = update.eventTime;
 
       /**
-       * 判断 updateLane 是否是 renderLanes 的子集
+       * 判断 updateLane 是否是 renderLanes 的子集，
+       * 若是子集，
        * 在初始render()时，renderLanes 和 updateLane一样，因此 isSubsetOfLanes(renderLanes, updateLane) 的结果为true，
        * 而这里再取反一次，则为false，会进入到 else 的逻辑中
        */
