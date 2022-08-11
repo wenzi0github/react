@@ -640,8 +640,11 @@ export function processUpdateQueue<State>(
       const updateLane = update.lane;
       const updateEventTime = update.eventTime;
 
-      // renderLanes 和 updateLane一样，因此 isSubsetOfLanes(renderLanes, updateLane) 的结果为true，
-      // 而这里再取反一次，则为false，会进入到 else 的逻辑中
+      /**
+       * 判断 updateLane 是否是 renderLanes 的子集
+       * 在初始render()时，renderLanes 和 updateLane一样，因此 isSubsetOfLanes(renderLanes, updateLane) 的结果为true，
+       * 而这里再取反一次，则为false，会进入到 else 的逻辑中
+       */
       if (!isSubsetOfLanes(renderLanes, updateLane)) {
         // Priority is insufficient. Skip this update. If this is the first
         // skipped update, the previous update/state is the new base
@@ -677,13 +680,22 @@ export function processUpdateQueue<State>(
         // 初始render()时会走这里
 
         if (newLastBaseUpdate !== null) {
-          // 若存储低优先级的更新链表不为空，则为了操作的完整性，同样将当前的update节点也拼接到后面
-          // 但初始render()渲染时，newLastBaseUpdate为空，走不到 if 这里
+          /**
+           * 若存储低优先级的更新链表不为空，则为了操作的完整性，即使当前update会执行，
+           * 也将当前的update节点也拼接到后面，
+           * 但初始render()渲染时，newLastBaseUpdate为空，走不到 if 这里
+           */
           const clone: Update<State> = {
             eventTime: updateEventTime,
             // This update is going to be committed so we never want uncommit
             // it. Using NoLane works because 0 is a subset of all bitmasks, so
             // this will never be skipped by the check above.
+            /**
+             * 翻译：这次update将要被提交更新，因此后续我们不希望取消这个提交。
+             * 使用 NoLane 这个是可行的，因为0是任何掩码的子集，
+             * 所以上面 if 的检测`isSubsetOfLanes(renderLanes, updateLane)`，永远都会为真，
+             * 该update永远不会被作为低优先级进行跳过，每次都会执行
+             */
             lane: NoLane,
 
             tag: update.tag,
@@ -716,7 +728,6 @@ export function processUpdateQueue<State>(
           instance,
         );
         const callback = update.callback;
-        console.log('%cgetStateFromUpdate', 'background-color: red', newState, callback);
         if (
           callback !== null &&
           // If the update was already committed, we should not queue its
@@ -732,7 +743,7 @@ export function processUpdateQueue<State>(
           }
         }
       }
-      update = update.next; // 只有一个update节点，next为null，直接break，跳出循环
+      update = update.next; // 初始render()时，只有一个update节点，next为null，直接break，跳出循环
       if (update === null) {
         /**
          * 在上面将 queue.shared.pending 放到firstBaseUpdate时，
