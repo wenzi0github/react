@@ -579,6 +579,11 @@ function checkClassInstance(workInProgress: Fiber, ctor: any, newProps: any) {
   }
 }
 
+/**
+ * workInProgress的fiber节点对应的是类组件，将该组件的实例与workInProgress进行互相关联
+ * @param {Fiber} workInProgress 当前的fiber节点
+ * @param {any} instance 类组件的实例
+ */
 function adoptClassInstance(workInProgress: Fiber, instance: any): void {
   instance.updater = classComponentUpdater;
   workInProgress.stateNode = instance;
@@ -589,6 +594,13 @@ function adoptClassInstance(workInProgress: Fiber, instance: any): void {
   }
 }
 
+/**
+ * 创建workInProgress对应的类组件的实例，同时将实例和fiber节点进行互相绑定
+ * @param {Fiber} workInProgress 当前fiber节点
+ * @param {any} ctor 类组件，可以：new ctor()
+ * @param props
+ * @returns {*} instance 实例
+ */
 function constructClassInstance(
   workInProgress: Fiber,
   ctor: any,
@@ -653,6 +665,7 @@ function constructClassInstance(
       : emptyContextObject;
   }
 
+  // 初始化出类的实例
   let instance = new ctor(props, context);
   // Instantiate twice to help detect side-effects.
   if (__DEV__) {
@@ -669,10 +682,17 @@ function constructClassInstance(
     }
   }
 
+  // 获取到类组件中的state，放到workInProgress中的memoizedState字段中
   const state = (workInProgress.memoizedState =
     instance.state !== null && instance.state !== undefined
       ? instance.state
       : null);
+
+  /**
+   * 将workInProgress和类的实例进行互相绑定
+   * instance.updater = workInProgress;
+   * workInProgress.stateNode = instance;
+   */
   adoptClassInstance(workInProgress, instance);
 
   if (__DEV__) {
@@ -760,6 +780,7 @@ function constructClassInstance(
 
   // Cache unmasked context so we can avoid recreating masked context unless necessary.
   // ReactFiberContext usually updates this cache but can't for newly-created instances.
+  // 缓存未屏蔽的上下文，以便在必要时避免重新创建屏蔽上下文。ReactFiberContext通常会更新此缓存，但不能更新新创建的实例。
   if (isLegacyContextConsumer) {
     cacheContext(workInProgress, unmaskedContext, context);
   }
@@ -768,8 +789,11 @@ function constructClassInstance(
 }
 
 function callComponentWillMount(workInProgress, instance) {
-  const oldState = instance.state;
+  const oldState = instance.state; // 当前的state
 
+  /**
+   * 下面的这两个方法已经定义时，则执行这俩
+   */
   if (typeof instance.componentWillMount === 'function') {
     instance.componentWillMount();
   }
@@ -778,6 +802,9 @@ function callComponentWillMount(workInProgress, instance) {
   }
 
   if (oldState !== instance.state) {
+    /**
+     * 若执行上面的两个方法后，state发生了变化，则在测试环境提示错误，无法直接修改state，需要调用setState方法
+     */
     if (__DEV__) {
       console.error(
         '%s.componentWillMount(): Assigning directly to this.state is ' +
@@ -823,6 +850,7 @@ function callComponentWillReceiveProps(
 }
 
 // Invokes the mount life-cycles on a previously never rendered instance.
+// 执行渲染之前的一些生命周期函数
 function mountClassInstance(
   workInProgress: Fiber,
   ctor: any,
@@ -833,11 +861,12 @@ function mountClassInstance(
     checkClassInstance(workInProgress, ctor, newProps);
   }
 
-  const instance = workInProgress.stateNode;
+  const instance = workInProgress.stateNode; // 获取到类组件的实例
   instance.props = newProps;
-  instance.state = workInProgress.memoizedState;
+  instance.state = workInProgress.memoizedState; // 类组件的state
   instance.refs = emptyRefsObject;
 
+  // 给类组件对应的fiber节点，初始化一个更新链表： fiber.updateQueue
   initializeUpdateQueue(workInProgress);
 
   const contextType = ctor.contextType;
@@ -879,8 +908,14 @@ function mountClassInstance(
     }
   }
 
+  // 没懂，为什么这里又重新赋值一次？
   instance.state = workInProgress.memoizedState;
 
+  /**
+   * https://zh-hans.reactjs.org/docs/react-component.html#static-getderivedstatefromprops
+   * getDerivedStateFromProps 是一个静态方法，会在调用 render 方法之前调用，并且在初始挂载及后续更新时都会被调用。
+   * 它应返回一个对象来更新 state，如果返回 null 则不更新任何内容。
+   */
   const getDerivedStateFromProps = ctor.getDerivedStateFromProps;
   if (typeof getDerivedStateFromProps === 'function') {
     applyDerivedStateFromProps(
@@ -900,13 +935,20 @@ function mountClassInstance(
     (typeof instance.UNSAFE_componentWillMount === 'function' ||
       typeof instance.componentWillMount === 'function')
   ) {
+    /**
+     * 当 componentWillMount 和 UNSAFE_componentWillMount 已定义时，执行这俩
+     */
     callComponentWillMount(workInProgress, instance);
     // If we had additional state updates during this life-cycle, let's
     // process them now.
+    // 执行当前fiber节点的更新链表中的update，不过初始化时，update为空，不需要更新
     processUpdateQueue(workInProgress, newProps, instance, renderLanes);
-    instance.state = workInProgress.memoizedState;
+    instance.state = workInProgress.memoizedState; // 得到最新的state
   }
 
+  /**
+   * 我猜的哈： componentDidMount 并不会像上面的方法那样直接执行，而是采用lanes模型来调度
+   */
   if (typeof instance.componentDidMount === 'function') {
     let fiberFlags: Flags = Update;
     if (enableSuspenseLayoutEffectSemantics) {
@@ -1090,6 +1132,16 @@ function resumeMountClassInstance(
 }
 
 // Invokes the update life-cycles and returns false if it shouldn't rerender.
+/**
+ * Invokes the update life-cycles and returns false if it shouldn't rerender.
+ * 前后两个fiber都存在
+ * @param current
+ * @param workInProgress
+ * @param ctor
+ * @param newProps
+ * @param renderLanes
+ * @returns {boolean|*}
+ */
 function updateClassInstance(
   current: Fiber,
   workInProgress: Fiber,
@@ -1099,6 +1151,7 @@ function updateClassInstance(
 ): boolean {
   const instance = workInProgress.stateNode;
 
+  // 将current中updateQueue属性中的字段给到workInProgress
   cloneUpdateQueue(current, workInProgress);
 
   const unresolvedOldProps = workInProgress.memoizedProps;

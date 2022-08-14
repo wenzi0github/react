@@ -134,11 +134,11 @@ export type SharedQueue<State> = {|
 |};
 
 export type UpdateQueue<State> = {|
-  baseState: State,
-  firstBaseUpdate: Update<State> | null,
-  lastBaseUpdate: Update<State> | null,
-  shared: SharedQueue<State>,
-  effects: Array<Update<State>> | null,
+  baseState: State, // 本次更新前该Fiber节点的state，Update基于该state计算更新后的state
+  firstBaseUpdate: Update<State> | null, // 上次渲染时遗留下来的低优先级任务会组成一个链表，该字段指向到该链表的头节点
+  lastBaseUpdate: Update<State> | null, // 该字段指向到该链表的尾节点
+  shared: SharedQueue<State>, // 本次渲染时要执行的任务，会存放在shared.pending中，这里是环形链表，更新时，会将其拆开，链接到 lastBaseUpdate 的后面
+  effects: Array<Update<State>> | null, // 存放 update.callback 不为null的update
 |};
 
 export const UpdateState = 0;
@@ -510,11 +510,16 @@ function getStateFromUpdate<State>(
 }
 
 /**
- * 操作updateQueue的队列
- * @param workInProgress
+ * 操作 fiber 节点中的 updateQueue 的队列
+ * 执行 fiber 中的 firstBaseUpdate 对应链表中每个节点的callback，操作 updateQueue.baseState，得到新的baseState，
+ * 而这里则会进行两个操作：
+ * 1. 将当前将要进行的更新任务（在shared.pending中），拆开，拼接到 lastBaseUpdate 的后面；
+ * 2. 判断更新的优先级，若是低优先级，则重新存储起来，用于下次的渲染更新，若优先级足够，则执行；
+ * 最后得到新的baseState
+ * @param workInProgress 当前处理的fiber节点
  * @param props
  * @param instance
- * @param renderLanes
+ * @param renderLanes 要执行的优先级
  */
 export function processUpdateQueue<State>(
   workInProgress: Fiber,
@@ -611,7 +616,9 @@ export function processUpdateQueue<State>(
     // 迭代更新列表以计算结果
 
     /**
-     * newState 的默认值：
+     * newState 先拿到上次的数据，然后执行 firstBaseUpdate 链表中所有的 update，
+     * 再存储每轮的结果，最后将其给到 workInProgress.memoizedState
+     * 默认值：
      * {
      *  cache: {controller: AbortController, data: Map(0), refCount: 1}
      *  element: null
@@ -631,8 +638,9 @@ export function processUpdateQueue<State>(
      * 下面的两个指针用来存放低优先级的更新链表，
      * 即 firstBaseUpdate 链表中，可能会存在一些优先级不够的update，
      * 若存在低优先级的update，则将其拼接到 newFirstBaseUpdate 里，
-     * 同时，既然存在低优先级的任务，为了保证整个更新的完整性，也会将已经执行的update也放到这个新链表中，
-     * 不过这里只存放update执行后的结果，没必要每次都执行。
+     * 同时，既然存在低优先级的任务，为了保证整个更新的完整性，也会将已经执行update后的结果，也放到这个新链表中，
+     * 这里存在一个问题，若低优先级任务是中间才出现的，怎么办呢？
+     * 解决方案：将执行到当前update前的state设置为新链表的初始值：newBaseState = newState;
      */
     let newFirstBaseUpdate = null; // 新的更新链表的头指针
     let newLastBaseUpdate = null; // 新的更新链表的尾指针
@@ -644,18 +652,24 @@ export function processUpdateQueue<State>(
 
       /**
        * 判断 updateLane 是否是 renderLanes 的子集，
-       * 若是子集，
-       * 在初始render()时，renderLanes 和 updateLane一样，因此 isSubsetOfLanes(renderLanes, updateLane) 的结果为true，
-       * 而这里再取反一次，则为false，会进入到 else 的逻辑中
+       * if 这里有个取反的符号，导致理解起来可能有点困难，实际上：
+       * 1. 若 update 的 lane (又名 updateLane) 是 renderLanes 的子集，则执行该update；
+       * 2. 若不是其子集，则将其放到心的队列中，等待下次的执行；
        */
       if (!isSubsetOfLanes(renderLanes, updateLane)) {
         // Priority is insufficient. Skip this update. If this is the first
         // skipped update, the previous update/state is the new base
         // update/state.
         /**
-         * 当前的update操作的优先级不够。跳过此更新。
-         * 如果这是第一次跳过的更新，则先前的更新/状态为新的基本更新/状态。
-         * @type {{next: null, payload: *, eventTime: number, callback: null, tag: (0|1|2|3), lane: Lane}}
+         * 若当前 update 的操作的优先级不够。跳过此更新。
+         * 将该update放到新的队列中，为了保证链式操作的连续性，下面else逻辑中已经可以执行的update，也放到这个队列中，
+         * 这里还有一个问题，从第一个低优先级的任务到最后都已经存储起来了，那新的初始状态是什么呢？
+         * 新的初始状态就是当前跳过的update节点时的那个状态。新的初始状态，只有在第一个跳过任务时才需要设置。
+         * 例如我们初始状态是0，有10个update的操作，第0个update的操作是+0，第1个update的操作是+1，第2个update的操作是+2，依次类推；
+         * 若第4个update是一个低优先级的操作，其他的都是正常的优先级。
+         * 那么将第4个update放到新的链表进行存储时，此时要存储的初始值就是执行当前节点前的值，是6（state+0+1+2+3）
+         * 后续的update即使当前已经执行过了，也是要放到新的链表中的，否则更新就会乱掉。
+         * 下次渲染时，就是以初始state为6，+4的那个update开始，重新判断优先级
          */
         const clone: Update<State> = {
           eventTime: updateEventTime,
@@ -669,7 +683,7 @@ export function processUpdateQueue<State>(
         };
         if (newLastBaseUpdate === null) {
           // 还没有节点，这clone就是头结点
-          //
+          // 并将此时的 newState 放到新的 newBaseState中
           newFirstBaseUpdate = newLastBaseUpdate = clone;
           newBaseState = newState;
         } else {
@@ -680,6 +694,7 @@ export function processUpdateQueue<State>(
         newLanes = mergeLanes(newLanes, updateLane);
       } else {
         // This update does have sufficient priority.
+        // 此更新具有足够的优先级
         // 初始render()时会走这里
 
         if (newLastBaseUpdate !== null) {
@@ -759,6 +774,9 @@ export function processUpdateQueue<State>(
         } else {
           // An update was scheduled from inside a reducer. Add the new
           // pending updates to the end of the list and keep processing.
+          /**
+           * 猜的，在优先级调度过程中，又有了新的更新到来，则此时再拼接到更新队列的后面，接着循环处理
+           */
           const lastPendingUpdate = pendingQueue;
           // Intentionally unsound. Pending updates form a circular list, but we
           // unravel them when transferring them to the base queue.
@@ -772,10 +790,12 @@ export function processUpdateQueue<State>(
     } while (true);
 
     if (newLastBaseUpdate === null) {
+      // 若没有任意的低优先级的任务呢，则将一串的update执行后的结果，就是新的 baseState，
+      // 若有低优先级的任务，则已经在上面设置过 newBaseState 了，就不能在这里设置了
       newBaseState = newState;
     }
 
-    queue.baseState = ((newBaseState: any): State);
+    queue.baseState = ((newBaseState: any): State); // 下次更新时，要使用的初始值
     queue.firstBaseUpdate = newFirstBaseUpdate;
     queue.lastBaseUpdate = newLastBaseUpdate;
 
@@ -815,7 +835,7 @@ export function processUpdateQueue<State>(
     // that regardless.
     markSkippedUpdateLanes(newLanes);
     workInProgress.lanes = newLanes;
-    workInProgress.memoizedState = newState;
+    workInProgress.memoizedState = newState; // 存储本次最新的结果
   }
 
   if (__DEV__) {

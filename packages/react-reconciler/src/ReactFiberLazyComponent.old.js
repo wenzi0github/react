@@ -10,7 +10,7 @@
 import assign from 'shared/assign';
 
 /**
- * 若Component有默认属性defaultProps，则baseProps中没有设置的属性，使用defaultProps中的数据进行条虫
+ * 若Component有默认属性defaultProps，则baseProps中没有设置的属性，使用defaultProps中的数据进行填充
  * 若没有默认属性，则直接返回
  * @param Component
  * @param baseProps

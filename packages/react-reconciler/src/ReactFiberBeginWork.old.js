@@ -1058,8 +1058,6 @@ function updateFunctionComponent(
     markComponentRenderStopped();
   }
 
-  console.log('updateFunctionComponent nextChildren', nextChildren);
-
   /**
    * 若current不为空，且 didReceiveUpdate 为false时，
    * 执行 bailoutHooks
@@ -1145,6 +1143,11 @@ function updateClassComponent(
   // Push context providers early to prevent context stack mismatches.
   // During mounting we don't know the child context yet as the instance doesn't exist.
   // We will invalidate the child context in finishClassComponent() right after rendering.
+  /**
+   * 翻译：尽早推送上下文提供程序以防止上下文堆栈不匹配。在装载期间，
+   * 我们还不知道子上下文，因为实例不存在。我们将在渲染后立即
+   * 使finishClassComponent（）中的子上下文无效。
+   */
   let hasContext;
   if (isLegacyContextProvider(Component)) {
     hasContext = true;
@@ -1154,17 +1157,27 @@ function updateClassComponent(
   }
   prepareToReadContext(workInProgress, renderLanes);
 
-  const instance = workInProgress.stateNode;
+  const instance = workInProgress.stateNode; // 在类组件中，stateNode存储的是类的实例
   let shouldUpdate;
   if (instance === null) {
+    // 若实例为空
     resetSuspendedCurrentOnMountInLegacyMode(current, workInProgress);
 
     // In the initial pass we might need to construct the instance.
+    /**
+     * 初始时，我们需要创建出一个实例，然后将workInProgress与这个实例互相绑定。
+     * 注意，此时仅是创建了实例，但没执行render()
+     */
     constructClassInstance(workInProgress, Component, nextProps);
+
+    /**
+     * 执行 componentWillMount() 方法，并设置 didMount() 的优先级
+     */
     mountClassInstance(workInProgress, Component, nextProps, renderLanes);
     shouldUpdate = true;
   } else if (current === null) {
     // In a resume, we'll already have an instance we can reuse.
+    // 虽然 current 的fiber节点为空，但workInProgress.stateNode已经有这个类组件的实例了，可以直接复用 workInProgress.stateNode 中的那个
     shouldUpdate = resumeMountClassInstance(
       workInProgress,
       Component,
@@ -1172,6 +1185,7 @@ function updateClassComponent(
       renderLanes,
     );
   } else {
+    // current的fiber节点不为空，则判断current和workInProgress两者是否有变化
     shouldUpdate = updateClassInstance(
       current,
       workInProgress,
@@ -1180,6 +1194,11 @@ function updateClassComponent(
       renderLanes,
     );
   }
+  /**
+   * finishClassComponent()执行render()方法得到element，
+   * 然后调用 reconcileChildren() 得到 workInProgress.child，并返回
+   * @type {Fiber}
+   */
   const nextUnitOfWork = finishClassComponent(
     current,
     workInProgress,
@@ -1204,6 +1223,18 @@ function updateClassComponent(
   return nextUnitOfWork;
 }
 
+/**
+ * finishClassComponent()执行render()方法得到element，
+ * 然后调用 reconcileChildren() 得到 workInProgress.child，并返回
+ * 注意：这里面并没有执行 componentDidMount() 这些生命周期
+ * @param current
+ * @param workInProgress
+ * @param Component
+ * @param shouldUpdate
+ * @param hasContext
+ * @param renderLanes
+ * @returns {Fiber}
+ */
 function finishClassComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -1217,6 +1248,7 @@ function finishClassComponent(
 
   const didCaptureError = (workInProgress.flags & DidCapture) !== NoFlags;
 
+  // 若不需要更新或报错，则提前退出
   if (!shouldUpdate && !didCaptureError) {
     // Context providers should defer to sCU for rendering
     if (hasContext) {
@@ -1287,6 +1319,7 @@ function finishClassComponent(
       renderLanes,
     );
   } else {
+    // 获取到element结构后，调用函数 reconcileChildren() 将其转为 workInProgress.child
     reconcileChildren(current, workInProgress, nextChildren, renderLanes);
   }
 
@@ -1354,7 +1387,7 @@ function updateHostRoot(current, workInProgress, renderLanes) {
    */
   processUpdateQueue(workInProgress, nextProps, null, renderLanes);
 
-  // 初始时，memoizedState 与 workInProgress.updateQueue.baseState 一样
+  // 得到通过各种更新后的最新数据，
   const nextState: RootState = workInProgress.memoizedState;
   const root: FiberRoot = workInProgress.stateNode; // 当workInProgress指向在树的根节点时，stateNode指向的整个应用的根节点 FiberRootNode
   pushRootTransition(workInProgress, root, renderLanes);
@@ -1370,7 +1403,7 @@ function updateHostRoot(current, workInProgress, renderLanes) {
 
   // Caution: React DevTools currently depends on this property
   // being called "element".
-  const nextChildren = nextState.element;
+  const nextChildren = nextState.element; // 拿到将要转为fiber的element
   if (supportsHydration && prevState.isDehydrated) {
     // This is a hydration root whose shell has not yet hydrated. We should
     // attempt to hydrate.
@@ -1459,13 +1492,14 @@ function updateHostRoot(current, workInProgress, renderLanes) {
     // already hydrated.
     resetHydrationState();
 
-    // 初始时，prevChildren为null，nextChildren为将要更新的element
-    // 后续二次更新时，若前后两次的element没有变化，则提前退出，直接复用之前的节点
+    // 若前后两次的element没有变化，则提前退出，直接复用之前的节点
+    // 而初始时，prevChildren为null，nextChildren为将要更新的element，肯定不相等
     if (nextChildren === prevChildren) {
       return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
     }
     /**
-     * nextChildren 为将要转为fiber节点的element结构
+     * nextChildren 为将要转为fiber节点的element结构，
+     * 将得到的fiber结构给到 workInProgress.child
      */
     reconcileChildren(current, workInProgress, nextChildren, renderLanes);
   }
@@ -1513,9 +1547,12 @@ function updateHostComponent(
   const prevProps = current !== null ? current.memoizedProps : null;
 
   let nextChildren = nextProps.children;
+  // 判断接下来是否要设置文本了，不过没看懂，若接下来是文本节点，为什么要把 nextChildren 设置为null？
+  // 而且在接下来的 updateHostText() 中，什么也没干
   const isDirectTextChild = shouldSetTextContent(type, nextProps);
 
   if (isDirectTextChild) {
+    // 若接下要转换的是文本节点，则
     // We special case a direct text child of a host node. This is a common
     // case. We won't handle it as a reified child. We will instead handle
     // this in the host environment that also has access to this prop. That
@@ -3795,7 +3832,7 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
 
 /**
  * 将 workInProgress中的element结构转为fiber节点
- * 流程图：https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/96509d9313404a0cbb8df590cb57c4a0~tplv-k3u1fbpfcp-zoom-in-crop-mark:1304:0:0:0.awebp?
+ * 流程图：https://mat1.gtimg.com/qqcdn/tupload/1660402559480.png
  * @param {Fiber | null} current 当前正在展示的那棵树的节点，初始渲染时是没有正在展示的那棵树的，因此可能为null
  * @param {Fiber} workInProgress 当前正在处理的fiber节点，其实是根据fiber节点的不同类型，通过不同的方式得到element结构
  * @param {Lanes} renderLanes 更新的优先级
@@ -3806,7 +3843,6 @@ function beginWork(
   workInProgress: Fiber, // 本次循环主体(unitOfWork)，也即待处理的 Fiber 节点
   renderLanes: Lanes,
 ): Fiber | null {
-  console.log('beginWork renderLanes', renderLanes);
   /**
    * current为当前树的那个fiber节点
    * unitOfWork为 更新树 的那个fiber节点
@@ -3963,8 +3999,9 @@ function beginWork(
       // 函数组件
       const Component = workInProgress.type; // 函数组件时，type即该函数，可以直接执行type()
       const unresolvedProps = workInProgress.pendingProps;
+      console.log('workInProgress.elementType === Component', workInProgress.elementType, Component, workInProgress.elementType === Component);
       const resolvedProps =
-        workInProgress.elementType === Component
+        workInProgress.elementType === Component // 刚才试了下，没找到不相等的案例
           ? unresolvedProps
           : resolveDefaultProps(Component, unresolvedProps);
       return updateFunctionComponent(

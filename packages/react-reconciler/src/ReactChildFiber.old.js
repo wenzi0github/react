@@ -470,6 +470,13 @@ function ChildReconciler(shouldTrackSideEffects) {
       );
     }
     if (current !== null) {
+      /**
+       * 若当前树已存在fiber节点，判断fiber节点的elementType和将要构建的element.type是否相同
+       * fiber节点的elementType（或 element.type）有三种类型：
+       * 1. 普通的html标签，type为该标签的tagName，如div, span等；
+       * 2. 当前是Function Component节点时，则type该组件的函数体，即可以执行type()；
+       * 3. 当前是Class Component节点，则type为该class，可以通过该type，new出一个实例；
+       */
       if (
         current.elementType === elementType ||
         // Keep this check inline so it only runs on the false path:

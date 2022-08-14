@@ -321,6 +321,11 @@ function FiberNode(tag: WorkTag, pendingProps: mixed, key: null | string, mode: 
    * @type {string}
    */
   this.key = key;
+
+  /**
+   * fiber 中的 elmentType 与 element 中的type一样
+   * this.elementType = element.type
+   */
   this.elementType = null;
 
   /**
@@ -335,7 +340,8 @@ function FiberNode(tag: WorkTag, pendingProps: mixed, key: null | string, mode: 
   /**
    * 1. 若当前fiber节点是dom元素，则对应的是真实DOM元素；
    * 2. 若当前是function component，则值为null；
-   * 3. 若当前是class component，则值为class初始化出来的实例
+   * 3. 若当前是class component，则值为class初始化出来的实例；
+   * 4. 若当前是 host component，即树的根节点，stateNode为 FiberRootNode；
    */
   this.stateNode = null;
 

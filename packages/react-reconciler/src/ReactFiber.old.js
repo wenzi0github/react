@@ -173,6 +173,10 @@ function FiberNode(
 
   this.ref = null;
 
+  /**
+   * const pendingProps = element.props;
+   * jsx上所有的属性（如className, id, children等）都是props，key不是，key单独拿出来了
+   */
   this.pendingProps = pendingProps;
   this.memoizedProps = null;
   this.updateQueue = null;
@@ -713,7 +717,7 @@ export function createFiberFromTypeAndProps(
   // 通过上面的判断，得到fiber的类型后，则调用createFiber()函数，生成fiber节点
   const fiber = createFiber(fiberTag, pendingProps, key, mode);
   fiber.elementType = type; // fiber中的elmentType与element中的type一样，
-  fiber.type = resolvedType; // 测试环境会做一些处理，正式环境与elementType属性一样
+  fiber.type = resolvedType; // 测试环境会做一些处理，正式环境与elementType属性一样，type为 REACT_LAZY_TYPE，resolveType为null
   fiber.lanes = lanes;
 
   if (__DEV__) {

@@ -59,6 +59,10 @@ const hasScheduledUpdateOrContext = checkScheduledUpdateOrContext(
 
 workInProgress初始时指向的是树的根节点，该节点的类型 tag 为`HostRoot`。从这里开始构建这棵fiber树。下面的几个操作，都是为了得到当前fiber节点中的element。
 
+大致的流程：
+
+![React中beginWork的执行流程](https://mat1.gtimg.com/qqcdn/tupload/1660402559480.png)
+
 ### 3.1 HostRoot
 
 当节点类型为 HostRoot时，会进入到这个分支中，然后执行函数 updateHostRoot()。
@@ -110,318 +114,386 @@ export function cloneUpdateQueue<State>(
 
 源码比较长，可以直接 [点击链接](https://github.com/wenzi0github/react/blob/55a685a8db632780436b52c5ebc6d968644a8eca/packages/react-reconciler/src/ReactUpdateQueue.old.js#L519) 去GitHub上查看。
 
-```javascript
-/**
- * 操作 updateQueue 的队列
- * @param workInProgress
- * @param props
- * @param instance
- * @param renderLanes
- */
-export function processUpdateQueue<State>(
-  workInProgress: Fiber,
-  props: any,
-  instance: any,
-  renderLanes: Lanes,
-): void {
-  // This is always non-null on a ClassComponent or HostRoot
-  // 在 HostRoot和 ClassComponent的fiber节点中，updateQueue不可能为null
-  const queue: UpdateQueue<State> = (workInProgress.updateQueue: any);
+关于 processUpdateQueue() 函数的详细解读，可以参考这篇文章[]()。我们这里就不展开了。这里要知道的是执行该方法后，初始的element结构，已经存放在了 workInProgress.memoizedState 中了。
 
-  hasForceUpdate = false;
+```javascript
+const nextState: RootState = workInProgress.memoizedState;
+
+// 若前后两次的element没有变化，则提前退出，直接复用之前的节点
+// 而初始时，prevChildren为null，nextChildren为将要更新的element，肯定不相等
+if (nextChildren === prevChildren) {
+  return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
+}
+/**
+ * nextChildren 为将要转为fiber节点的element结构，
+ * 将得到的fiber结构给到 workInProgress.child
+ */
+reconcileChildren(current, workInProgress, nextChildren, renderLanes);
+```
+
+关于函数 reconcileChildren() 如何将element转为 fiber结构，可以参考第4节。如上面所说，本第3节的内容，都只是根据不同的类型的组件，通过不同的方式获取到 element结构。具体怎么转换，是在函数 reconcileChildren() 中。
+
+### 3.2 FunctionComponent
+
+当节点类型为 FunctionComponent 时，会进入到这个分支中，然后执行函数 updateFunctionComponent()。
+
+若 workInProgress 为函数组件，只有执行这个函数，才能得到内部的jsx。而这个实体函数就放在属性`type`中。函数组件会涉及到hooks的使用，这里我们暂时会直接跳过，不讲解hooks。
+
+```javascript
+const Component = workInProgress.type; // 函数组件时，type即该函数，可以直接执行type()
+```
+
+函数组件的主体就放在属性type中，后续执行该type字段即可。
+
+#### 3.2.1 updateFunctionComponent
+
+对函数组件进行处理。
+
+```javascript
+function updateFunctionComponent(
+  current,
+  workInProgress,
+  Component,
+  nextProps: any,
+  renderLanes,
+) {
+  let nextChildren = renderWithHooks(
+    current,
+    workInProgress,
+    Component,
+    nextProps,
+    context,
+    renderLanes,
+  );
+  /**
+   * 若current不为空，且 didReceiveUpdate 为false时，
+   * 执行 bailoutHooks
+   */
+  if (current !== null && !didReceiveUpdate) {
+    bailoutHooks(current, workInProgress, renderLanes);
+    /**
+     * 优化的工作路径 —— bailout https://juejin.cn/post/7017702556629467167#heading-17
+     * React 引入了树遍历算法中的常用优化手段 —— “剪枝”，在 React 中又被称作 bailout 。
+     * 通过 bailout ，某些与本次更新毫无关系的 Fiber 树路径将被直接省略掉；当然，
+     * “省略”并不是直接将这部分 Fiber 节点丢弃，而是直接复用被“省略”的 Fiber 子树的根节点；
+     * 这种“复用”方式，是会保留被“省略”的 Fiber 子树的所有 Fiber 节点的。
+     */
+    return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
+  }
+
+  reconcileChildren(current, workInProgress, nextChildren, renderLanes);
+  return workInProgress.child;
+}
+```
+
+可以看到该方法的最后，也是调用了函数 reconcileChildren()。
+
+这里最主要的是nextChildren怎么得到的？
+
+```javascript
+nextChildren = renderWithHooks(
+  current,
+  workInProgress,
+  Component,
+  nextProps,
+  context,
+  renderLanes,
+);
+```
+
+#### 3.2.2 renderWithHooks
+
+这里我们精简下 renderWithHooks() 中的操作：
+
+```javascript
+export function renderWithHooks<Props, SecondArg>(
+  current: Fiber | null,
+  workInProgress: Fiber,
+  Component: (p: Props, arg: SecondArg) => any,
+  props: Props,
+  secondArg: SecondArg,
+  nextRenderLanes: Lanes,
+): any {
+  renderLanes = nextRenderLanes;
+  currentlyRenderingFiber = workInProgress; // 当前Function Component对应的fiber节点
+
+  // 根据是否是初始化挂载，来决定是初始化hook，还是更新hook
+  // 将初始化或更新hook的方法给到 ReactCurrentDispatcher.current 上，
+  // 稍后函数组件拿到的hooks，都是从 ReactCurrentDispatcher.current 中拿到的
+  ReactCurrentDispatcher.current =
+    current === null || current.memoizedState === null
+      ? HooksDispatcherOnMount
+      : HooksDispatcherOnUpdate;
 
   /**
-   * queue.shared.pending 是一个环形链表，即使有一个节点，自身也会形成环形链表，
-   * 而且 queue.shared.pending 指向的是环形链表的最后一个节点，这里需要将其断开形成单向链表，
-   * 然后把单向链表的头指针存放到 firstBaseUpdate 中，最后一个节点则存放到 lastBaseUpdate 中
+   * 执行 Function Component，将我们写的jsx通过babel编译为element结构，并返回
    */
-  let firstBaseUpdate = queue.firstBaseUpdate; // 更新链表的开始节点
-  let lastBaseUpdate = queue.lastBaseUpdate; // 更新链表的最后的那个节点
+  let children = Component(props, secondArg);
 
-  // Check if there are pending updates. If so, transfer them to the base queue.
-  // 检测是否存在将要进行的更新，若存在，则将其转义到 firstBaseUpdate 上，并清空刚才的链表
-  let pendingQueue = queue.shared.pending;
-  if (pendingQueue !== null) {
-    queue.shared.pending = null;
+  return children;
+}
+```
 
-    // The pending queue is circular. Disconnect the pointer between first
-    // and last so that it's non-circular.
+核心的操作就是`children = Component(props, secondArg)`，通过执行该函数，得到内部的element结构，即children，然后返回到 updateFunctionComponent()，再传递给 reconcileChildren() 进行处理。
+
+若只是了解element转为fiber的过程，上面的精简版已经够用了。若想了解 renderWithHooks() 具体都做了些什么，可以跳转去：[React18 源码解析之 hooks 的挂载](https://www.xiabingbao.com)。
+
+### 3.3 ClassComponent
+
+当节点类型为 ClassComponent 时，会进入到这个分支中，然后执行函数 updateClassComponent()。
+
+现在函数组件是React的趋势，我们不会深入类组件的各个环节。
+
+workInProgress 对应的是类组件时，workInProgress.stateNode中应当存储的是该类组件的实例。在初始render()阶段，workInProgress.stateNode为空，需要调用函数 constructClassInstance() 来创建实例。
+
+#### 3.3.1 constructClassInstance
+
+该函数主要是用来创建 workInProgress 这个fiber节点对应的类组件的实例，同时将创建出来的实例和workInProgress节点进行互相绑定。
+
+```javascript
+/**
+ * 创建workInProgress对应的类组件的实例，同时将实例和fiber节点进行互相绑定
+ * @param {Fiber} workInProgress 当前fiber节点
+ * @param {any} ctor 类组件，可以：new ctor()
+ * @param props
+ * @returns {*} instance 实例
+ */
+function constructClassInstance(
+  workInProgress: Fiber,
+  ctor: any,
+  props: any,
+): any {
+  // 初始化出类的实例
+  let instance = new ctor(props, context);
+
+  // 获取到类组件中的state，放到workInProgress中的memoizedState字段中
+  const state = (workInProgress.memoizedState =
+    instance.state !== null && instance.state !== undefined
+      ? instance.state
+      : null);
+
+  /**
+   * 将workInProgress和类的实例进行互相绑定
+   * instance.updater = workInProgress;
+   * workInProgress.stateNode = instance;
+   */
+  adoptClassInstance(workInProgress, instance);
+
+  return instance;
+}
+```
+
+这里只是创建出来了一个实例而已，并没有执行内部任何的方法。
+
+创建成功后，我们就可以直接从 workInProgress.stateNode 拿到这个类的实例了，然后再执行其内部的一些生命周期方法和render()等。
+
+#### 3.3.2 mountClassInstance
+
+再回到 updateClassComponent()，接着就会执行 mountClassInstance()。这里面会执行一些调用render()之前的方法和生命周期，如 getDerivedStateFromProps、componentWillMount等。
+
+> componentDidMount是渲染完成后才会执行的方法，因此这里并不会执行该生命周期。
+
+我们使用函数constructClassInstance()，保证了后续从 workInProgress.stateNode 中获取实例时，一定是存在的。
+
+```javascript
+// 执行渲染之前的一些生命周期函数
+function mountClassInstance(
+  workInProgress: Fiber,
+  ctor: any,
+  newProps: any,
+  renderLanes: Lanes,
+): void {
+  const instance = workInProgress.stateNode; // 获取到类组件的实例
+  instance.props = newProps;
+  instance.state = workInProgress.memoizedState; // 类组件的state
+  instance.refs = emptyRefsObject;
+
+  // 给类组件对应的fiber节点，初始化一个更新链表： fiber.updateQueue
+  initializeUpdateQueue(workInProgress);
+
+  const contextType = ctor.contextType;
+  if (typeof contextType === 'object' && contextType !== null) {
+    instance.context = readContext(contextType);
+  } else if (disableLegacyContext) {
+    instance.context = emptyContextObject;
+  } else {
+    const unmaskedContext = getUnmaskedContext(workInProgress, ctor, true);
+    instance.context = getMaskedContext(workInProgress, unmaskedContext);
+  }
+  
+  // 没懂，为什么这里又重新赋值一次？
+  instance.state = workInProgress.memoizedState;
+
+  /**
+   * https://zh-hans.reactjs.org/docs/react-component.html#static-getderivedstatefromprops
+   * getDerivedStateFromProps 是一个静态方法，会在调用 render 方法之前调用，并且在初始挂载及后续更新时都会被调用。
+   * 它应返回一个对象来更新 state，如果返回 null 则不更新任何内容。
+   */
+  const getDerivedStateFromProps = ctor.getDerivedStateFromProps;
+  if (typeof getDerivedStateFromProps === 'function') {
+    applyDerivedStateFromProps(
+      workInProgress,
+      ctor,
+      getDerivedStateFromProps,
+      newProps,
+    );
+    instance.state = workInProgress.memoizedState;
+  }
+
+  // In order to support react-lifecycles-compat polyfilled components,
+  // Unsafe lifecycles should not be invoked for components using the new APIs.
+  if (
+    typeof ctor.getDerivedStateFromProps !== 'function' &&
+    typeof instance.getSnapshotBeforeUpdate !== 'function' &&
+    (typeof instance.UNSAFE_componentWillMount === 'function' ||
+      typeof instance.componentWillMount === 'function')
+  ) {
     /**
-     * 若pending queue 是一个环形链表，则将第一个和最后一个节点断开，
-     * 环形链表默认指向的是最后一个节点，因此 pendingQueue 指向的就是最后一个节点，
-     * pendingQueue.next(lastPendingUpdate.next)就是第一个节点了
+     * 当 componentWillMount 和 UNSAFE_componentWillMount 已定义时，执行这俩
      */
-    const lastPendingUpdate = pendingQueue; // 环形链表的最后一个节点
-    const firstPendingUpdate = lastPendingUpdate.next; // 环形链表的第一个节点
-    lastPendingUpdate.next = null; // 最后一个节点与第一个节点断开
-
-    /**
-     * 将 pendingQueue 拼接到 更新链表 queue.firstBaseUpdate 的后面
-     * 1. 更新链表的最后那个节点为空，说明当前更新链表为空，将，要更新的首节点 firstPendingUpdate 给到 firstBaseUpdate即可；
-     * 2. 若更新链表的尾节点不为空，则将要更新的首节点 firstPendingUpdate 拼接到 lastBaseUpdate 的后面；
-     * 3. 拼接完毕后，lastBaseUpdate 指向到新的更新链表最后的那个节点；
-     */
-    // Append pending updates to base queue
-    if (lastBaseUpdate === null) {
-      firstBaseUpdate = firstPendingUpdate;
-    } else {
-      lastBaseUpdate.next = firstPendingUpdate;
-    }
-    lastBaseUpdate = lastPendingUpdate;
-
-    // If there's a current queue, and it's different from the base queue, then
-    // we need to transfer the updates to that queue, too. Because the base
-    // queue is a singly-linked list with no cycles, we can append to both
-    // lists and take advantage of structural sharing.
-    // TODO: Pass `current` as argument
-    /**
-     * 若workInProgress对应的在current的那个fiber节点，其更新队列的最后那个节点与当前的最后那个节点不一样，
-     * 则我们将上面「将要更新」的链表的头指针和尾指针给到current节点的更新队列中，
-     * 拼接方式与上面的一样
-     */
-    const current = workInProgress.alternate;
-    if (current !== null) {
-      // This is always non-null on a ClassComponent or HostRoot
-      const currentQueue: UpdateQueue<State> = (current.updateQueue: any);
-      const currentLastBaseUpdate = currentQueue.lastBaseUpdate;
-
-      // 若current更新链表的最后那个节点与当前将要更新的链表的最后那个节点不一样
-      // 则，把将要更新的链表也拼接到current中
-      if (currentLastBaseUpdate !== lastBaseUpdate) {
-        if (currentLastBaseUpdate === null) {
-          currentQueue.firstBaseUpdate = firstPendingUpdate;
-        } else {
-          currentLastBaseUpdate.next = firstPendingUpdate;
-        }
-        currentQueue.lastBaseUpdate = lastPendingUpdate;
-      }
-    }
+    callComponentWillMount(workInProgress, instance);
+    // If we had additional state updates during this life-cycle, let's
+    // process them now.
+    // 执行当前fiber节点的更新链表中的update，不过初始化时，update为空，不需要更新
+    processUpdateQueue(workInProgress, newProps, instance, renderLanes);
+    instance.state = workInProgress.memoizedState; // 得到最新的state
   }
 
   /**
-   * 进行到这里，render()初始更新时，放在 queue.shared.pending 中的update节点（里面存放着element结构），
-   * 就已经放到 queue.firstBaseUpdate 里了，
-   * 因此 firstBaseUpdate 里肯定存放了一个 update 节点，一定不为空，进入到 if 的逻辑中
+   * 我猜的哈： componentDidMount 并不会像上面的方法那样直接执行，而是采用lanes模型来调度
    */
-  // These values may change as we process the queue.
-  if (firstBaseUpdate !== null) {
-    // Iterate through the list of updates to compute the result.
-    // 迭代更新列表以计算结果
-
-    /**
-     * newState 的默认值：
-     * {
-     *  cache: {controller: AbortController, data: Map(0), refCount: 1}
-     *  element: null
-     *  isDehydrated: false
-     *  pendingSuspenseBoundaries: null
-     *  transitions: null
-     * }
-     */
-    let newState = queue.baseState;
-    // TODO: Don't need to accumulate this. Instead, we can remove renderLanes
-    // from the original lanes.
-    let newLanes = NoLanes;
-
-    let newBaseState = null; // 执行链表中所有的操作后，得到的新结果
-
-    /**
-     * 下面的两个指针用来存放低优先级的更新链表，
-     * 即 firstBaseUpdate 链表中，可能会存在一些优先级不够的update，
-     * 若存在低优先级的update，则将其拼接到 newFirstBaseUpdate 里，
-     * 同时，既然存在低优先级的任务，为了保证整个更新的完整性，也会将已经执行的update也放到这个新链表中，
-     * 不过这里只存放update执行后的结果，没必要每次都执行。
-     */
-    let newFirstBaseUpdate = null; // 新的更新链表的头指针
-    let newLastBaseUpdate = null; // 新的更新链表的尾指针
-
-    let update = firstBaseUpdate;
-    do {
-      const updateLane = update.lane;
-      const updateEventTime = update.eventTime;
-
-      /**
-       * 判断 updateLane 是否是 renderLanes 的子集
-       * 在初始render()时，renderLanes 和 updateLane一样，因此 isSubsetOfLanes(renderLanes, updateLane) 的结果为true，
-       * 而这里再取反一次，则为false，会进入到 else 的逻辑中
-       */
-      if (!isSubsetOfLanes(renderLanes, updateLane)) {
-        // Priority is insufficient. Skip this update. If this is the first
-        // skipped update, the previous update/state is the new base
-        // update/state.
-        /**
-         * 当前的update操作的优先级不够。跳过此更新。
-         * 如果这是第一次跳过的更新，则先前的更新/状态为新的基本更新/状态。
-         * @type {{next: null, payload: *, eventTime: number, callback: null, tag: (0|1|2|3), lane: Lane}}
-         */
-        const clone: Update<State> = {
-          eventTime: updateEventTime,
-          lane: updateLane,
-
-          tag: update.tag,
-          payload: update.payload,
-          callback: update.callback,
-
-          next: null,
-        };
-        if (newLastBaseUpdate === null) {
-          // 还没有节点，这clone就是头结点
-          //
-          newFirstBaseUpdate = newLastBaseUpdate = clone;
-          newBaseState = newState;
-        } else {
-          // 已经有节点了，直接向后拼接
-          newLastBaseUpdate = newLastBaseUpdate.next = clone;
-        }
-        // Update the remaining priority in the queue.
-        newLanes = mergeLanes(newLanes, updateLane);
-      } else {
-        // This update does have sufficient priority.
-        // 初始render()时会走这里
-
-        if (newLastBaseUpdate !== null) {
-          /**
-           * 若存储低优先级的更新链表不为空，则为了操作的完整性，即使当前update会执行，
-           * 也将当前的update节点也拼接到后面，
-           * 但初始render()渲染时，newLastBaseUpdate为空，走不到 if 这里
-           */
-          const clone: Update<State> = {
-            eventTime: updateEventTime,
-            // This update is going to be committed so we never want uncommit
-            // it. Using NoLane works because 0 is a subset of all bitmasks, so
-            // this will never be skipped by the check above.
-            /**
-             * 翻译：这次update将要被提交更新，因此后续我们不希望取消这个提交。
-             * 使用 NoLane 这个是可行的，因为0是任何掩码的子集，
-             * 所以上面 if 的检测`isSubsetOfLanes(renderLanes, updateLane)`，永远都会为真，
-             * 该update永远不会被作为低优先级进行跳过，每次都会执行
-             */
-            lane: NoLane,
-
-            tag: update.tag,
-            payload: update.payload,
-            callback: update.callback,
-
-            next: null,
-          };
-          newLastBaseUpdate = newLastBaseUpdate.next = clone;
-        }
-
-        // Process this update.
-        /**
-         * render()时 newState 的默认值：
-         * {
-         *  cache: {controller: AbortController, data: Map(0), refCount: 1}
-         *  element: null
-         *  isDehydrated: false
-         *  pendingSuspenseBoundaries: null
-         *  transitions: null
-         * }
-         * 执行 getStateFromUpdate() 后，则会将 update 中的 element 给到 newState 中
-         */
-        newState = getStateFromUpdate(
-          workInProgress,
-          queue,
-          update,
-          newState,
-          props,
-          instance,
-        );
-        const callback = update.callback;
-        if (
-          callback !== null &&
-          // If the update was already committed, we should not queue its
-          // callback again.
-          update.lane !== NoLane
-        ) {
-          workInProgress.flags |= Callback;
-          const effects = queue.effects;
-          if (effects === null) {
-            queue.effects = [update];
-          } else {
-            effects.push(update);
-          }
-        }
-      }
-      update = update.next; // 初始render()时，只有一个update节点，next为null，直接break，跳出循环
-      if (update === null) {
-        /**
-         * 在上面将 queue.shared.pending 放到firstBaseUpdate时，
-         * queue.shared.pending就已经重置为null了
-         * @type {Update<State>|null|*}
-         */
-        pendingQueue = queue.shared.pending;
-        if (pendingQueue === null) {
-          break;
-        } else {
-          // An update was scheduled from inside a reducer. Add the new
-          // pending updates to the end of the list and keep processing.
-          const lastPendingUpdate = pendingQueue;
-          // Intentionally unsound. Pending updates form a circular list, but we
-          // unravel them when transferring them to the base queue.
-          const firstPendingUpdate = ((lastPendingUpdate.next: any): Update<State>);
-          lastPendingUpdate.next = null;
-          update = firstPendingUpdate;
-          queue.lastBaseUpdate = lastPendingUpdate;
-          queue.shared.pending = null;
-        }
-      }
-    } while (true);
-
-    if (newLastBaseUpdate === null) {
-      newBaseState = newState;
+  if (typeof instance.componentDidMount === 'function') {
+    let fiberFlags: Flags = Update;
+    if (enableSuspenseLayoutEffectSemantics) {
+      fiberFlags |= LayoutStatic;
     }
-
-    queue.baseState = ((newBaseState: any): State);
-    queue.firstBaseUpdate = newFirstBaseUpdate;
-    queue.lastBaseUpdate = newLastBaseUpdate;
-
-    /**
-     * 经过上面的操作，queue（即 workInProgress.updateQueue ）为：
-     * baseState: { element: element结构, isDehydrated: false }
-     * effects: null,
-     * firstBaseUpdate: null,
-     * lastBaseUpdate: null,
-     * shared: { pending: null, interleaved: null, lanes: 0 }
-     */
-
-    // workInProgress.updateQueue的数据结构： https://mat1.gtimg.com/qqcdn/tupload/1659687672451.png
-
-    // Interleaved updates are stored on a separate queue. We aren't going to
-    // process them during this render, but we do need to track which lanes
-    // are remaining.
-    const lastInterleaved = queue.shared.interleaved;
-    if (lastInterleaved !== null) {
-      let interleaved = lastInterleaved;
-      do {
-        newLanes = mergeLanes(newLanes, interleaved.lane);
-        interleaved = ((interleaved: any).next: Update<State>);
-      } while (interleaved !== lastInterleaved);
-    } else if (firstBaseUpdate === null) {
-      // `queue.lanes` is used for entangling transitions. We can set it back to
-      // zero once the queue is empty.
-      queue.shared.lanes = NoLanes;
-    }
-
-    // Set the remaining expiration time to be whatever is remaining in the queue.
-    // This should be fine because the only two other things that contribute to
-    // expiration time are props and context. We're already in the middle of the
-    // begin phase by the time we start processing the queue, so we've already
-    // dealt with the props. Context in components that specify
-    // shouldComponentUpdate is tricky; but we'll have to account for
-    // that regardless.
-    markSkippedUpdateLanes(newLanes);
-    workInProgress.lanes = newLanes;
-    workInProgress.memoizedState = newState;
+    workInProgress.flags |= fiberFlags;
   }
 }
 ```
 
-### 3.2 FunctionComponent
+#### 3.3.3 finishClassComponent
 
-### 3.3 ClassComponent
+我们再次回到 updateClassComponent() 中，这时就流转到 finishClassComponent() 中了。这里面会调用render()方法获取到jsx（即element结构），然后调用 reconcileChildren() 将element转为fiber结构。
+
+```javascript
+
+/**
+ * finishClassComponent()执行render()方法得到element，
+ * 然后调用 reconcileChildren() 得到 workInProgress.child，并返回
+ * 注意：这里面并没有执行 componentDidMount() 这些生命周期
+ * @param current
+ * @param workInProgress
+ * @param Component
+ * @param shouldUpdate
+ * @param hasContext
+ * @param renderLanes
+ * @returns {Fiber}
+ */
+function finishClassComponent(
+  current: Fiber | null,
+  workInProgress: Fiber,
+  Component: any,
+  shouldUpdate: boolean,
+  hasContext: boolean,
+  renderLanes: Lanes,
+) {
+  const instance = workInProgress.stateNode; // 类组件的实例
+
+  // 类组件，就调用render()方法获取jsx对应的element结构
+  nextChildren = instance.render();
+  
+  // 获取到element结构后，调用函数 reconcileChildren() 将其转为 workInProgress.child
+  reconcileChildren(current, workInProgress, nextChildren, renderLanes);
+
+  // Memoize state using the values we just used to render.
+  // render()之后重新存储state的值
+  workInProgress.memoizedState = instance.state;
+
+  return workInProgress.child;
+}
+```
+
+到这里，类组件中的element已转为fiber节点。
 
 ### 3.4 HostComponent
+
+当节点类型为 HostComponent 时，说明当前fiber节点是原生html标签，会进入到这个分支中，然后执行函数 updateHostComponent()。
+
+原生HTML标签对应的fiber节点，获取element时就简单很多。直接从props中获取children属性即可，唯一要注意的就是对文本节点的处理，不过这里我没看懂。
+
+```javascript
+/**
+ * 处理html标签的element结构
+ * @param current
+ * @param workInProgress
+ * @param renderLanes
+ * @returns {Fiber}
+ */
+function updateHostComponent(
+  current: Fiber | null,
+  workInProgress: Fiber,
+  renderLanes: Lanes,
+) {
+  const type = workInProgress.type; // 当前节点的类型，
+  const nextProps = workInProgress.pendingProps; // props，如className, id, children等
+  const prevProps = current !== null ? current.memoizedProps : null;
+
+  let nextChildren = nextProps.children;
+  // 判断接下来是否要设置文本了，不过没看懂，若接下来是文本节点，为什么要把 nextChildren 设置为null？
+  // 而且在接下来的 updateHostText() 中，什么也没干
+  const isDirectTextChild = shouldSetTextContent(type, nextProps);
+
+  if (isDirectTextChild) {
+    // 若接下要转换的是文本节点，则
+    // We special case a direct text child of a host node. This is a common
+    // case. We won't handle it as a reified child. We will instead handle
+    // this in the host environment that also has access to this prop. That
+    // avoids allocating another HostText fiber and traversing it.
+    nextChildren = null;
+  } else if (prevProps !== null && shouldSetTextContent(type, prevProps)) {
+    // If we're switching from a direct text child to a normal child, or to
+    // empty, we need to schedule the text content to be reset.
+    workInProgress.flags |= ContentReset;
+  }
+
+  markRef(current, workInProgress);
+
+  /**
+   * 对除文本类型之外的其他类型，转为fiber节点
+   */
+  reconcileChildren(current, workInProgress, nextChildren, renderLanes);
+  return workInProgress.child;
+}
+```
+
+这里还得保留一个疑问，目前没看懂对文本类型的处理，接下来是文本节点，为什么要把 nextChildren 设置为null？而且在接下来的 updateHostText() 中，什么也没干。那么哪个地方处理这个文本内容了。
+
+### 3.5 IndeterminateComponent
+
+有同学在 `FunctionComponent` 中打点时，发现第一次渲染时，各种函数组件并没有进入到那个逻辑里。其实函数类型的组件都进入到 `IndeterminateComponent` 的类型中了，即不确定类型的组件。
+
+为什么用 function 编写的组件，还是"不确定类型"呢？如以下的两种方式：
+
+```javascript
+// function中return 带有 render() 的obj
+function App() {
+  return {
+    render() {
+      return (<p>function render</p>);
+    }
+  }
+}
+
+// function 中直接return一个jsx
+function App() {
+  return (<p>function jsx</p>);
+}
+```
+
+上面这两种方式，React都是支持的，个人猜测，这是因为在js中，class也是可以用function来模拟的，有的开发者喜欢用function来实现class。
+
+那么在React内部，就得判断这两者
 
 ## 4. reconcileChildren
 
