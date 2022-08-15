@@ -221,7 +221,7 @@ export function createUpdate(eventTime: number, lane: Lane): Update<*> {
 }
 
 /**
- * 将update添加到fiber的updateQueue.shared.pending中
+ * 将update节点添加到fiber的updateQueue.shared.pending中
  * https://github.com/wenzi0github/react/issues/7
  * https://zhuanlan.zhihu.com/p/386897467
  * @param fiber
@@ -632,7 +632,12 @@ export function processUpdateQueue<State>(
     // from the original lanes.
     let newLanes = NoLanes;
 
-    let newBaseState = null; // 执行链表中所有的操作后，得到的新结果
+    /**
+     * 下次渲染时的初始值
+     * 1. 若存在低优先级的任务，则该 newBaseState 为第一个低优先级任务之前计算后的值；
+     * 2. 若不存在低优先级的任务，则 newBaseState 为执行完所有任务后得到的值；
+     */
+    let newBaseState = null;
 
     /**
      * 下面的两个指针用来存放低优先级的更新链表，
