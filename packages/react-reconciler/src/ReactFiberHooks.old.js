@@ -442,11 +442,13 @@ export function renderWithHooks<Props, SecondArg>(
     // 根据是否是初始化挂载，来决定是初始化hook，还是更新hook
     // 将初始化或更新hook的方法给到 ReactCurrentDispatcher.current 上，
     // 稍后函数组件拿到的hooks，都是从 ReactCurrentDispatcher.current 中拿到的
+    // 共用变量 ReactCurrentDispatcher 的位置： packages/react/src/ReactSharedInternals.js
     ReactCurrentDispatcher.current =
       current === null || current.memoizedState === null
         ? HooksDispatcherOnMount
         : HooksDispatcherOnUpdate;
   }
+  console.log('ReactCurrentDispatcher.current', ReactCurrentDispatcher.current);
 
   /**
    * 执行 Function Component，将我们写的jsx通过babel编译为element结构，并返回
@@ -1586,7 +1588,7 @@ function mountState<S>(
   initialState: (() => S) | S,
 ): [S, Dispatch<BasicStateAction<S>>] {
   /**
-   * 创建一个hook节点，并将其挂载到currentlyRenderingFiber链表的最后
+   * 创建一个hook节点，并将其挂载到 currentlyRenderingFiber 链表的最后
    * @type {Hook}
    */
   const hook = mountWorkInProgressHook();
@@ -1608,6 +1610,19 @@ function mountState<S>(
     lastRenderedState: (initialState: any), // 上次render后的state
   };
   hook.queue = queue;
+
+  /**
+   * bind()可以实现偏函数的功能：
+   * https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Function/bind#%E5%81%8F%E5%87%BD%E6%95%B0
+   * 返回一个新的函数，使这个新函数拥有预设的初始参数。
+   * 如 dispatchSetState() 本来要传入3个参数：fiber, queue, action，
+   * 但这里我们提前预设好了前2个参数：const dispatch = dispatchSetState.bind(null, currentlyRenderingFiber, queue)；
+   * 因此 dispatch 和 queue.dispatch 在被调用时，只需要传入第3个参数action即可。
+   * 在一个函数组件中，const [state, setState] = useState(0); 若 setState() 执行多次，说明 dispatch() 调用了多次，
+   * 所有的操作都会放在 pending 中： hook.queue.pending => update -> update -> update；
+   * 具体操作： hook.queue.dispatch = dispatchSetState();
+   * 初始值： hook.memoizedState = hook.baseState = initialState;
+   */
   const dispatch: Dispatch<
     BasicStateAction<S>,
   > = (queue.dispatch = (dispatchSetState.bind(

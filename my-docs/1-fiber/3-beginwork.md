@@ -4,6 +4,8 @@
 
 我们在上一篇文章 [React18 源码解析之虚拟 DOM 转为 fiber 树](https://www.xiabingbao.com/post/fe/loop-settimeout-rg18mv.html) 中只是简单地了解了下 beginWork() 的操作，通过 beginWork()可以将当前 fiber 节点里的 element 转为 fiber 节点。这篇文章我们会详细讲解下，element 转为 fiber 节点的具体实现。
 
+beginWork() 源码位置：[packages/react-reconciler/src/ReactFiberBeginWork.old.js](https://github.com/wenzi0github/react/blob/d7c33be1d8edeac249a9191061f7badcd43d4c8a/packages/react-reconciler/src/ReactFiberBeginWork.old.js#L3841)。
+
 ## 1. 基本操作
 
 beginWork()函数根据不同的节点类型（如函数组件、类组件、html 标签、树的根节点等），调用不同的函数来处理，将该 fiber 节点中带有的 element 结构解析成 fiber 节点。我们第一次调用时，unitOfWork（即 workInProgress）最初指向的就是树的根节点，这个根节点的类型`tag`是：HostRoot。
@@ -61,7 +63,7 @@ workInProgress初始时指向的是树的根节点，该节点的类型 tag 为`
 
 大致的流程：
 
-![React中beginWork的执行流程](https://mat1.gtimg.com/qqcdn/tupload/1660402559480.png)
+![React中 beginWork() 的执行流程](https://mat1.gtimg.com/qqcdn/tupload/1660402559480.png)
 
 ### 3.1 HostRoot
 
@@ -473,7 +475,7 @@ function updateHostComponent(
 
 有同学在 `FunctionComponent` 中打点时，发现第一次渲染时，各种函数组件并没有进入到那个逻辑里。其实函数类型的组件都进入到 `IndeterminateComponent` 的类型中了，即不确定类型的组件。
 
-为什么用 function 编写的组件，还是"不确定类型"呢？如以下的两种方式：
+为什么用 function 编写的组件，还是"不确定类型"呢？如以下的几种方式：
 
 ```javascript
 // function中return 带有 render() 的obj
@@ -485,19 +487,78 @@ function App() {
   }
 }
 
+// render() 在 函数 App() 的prototype上
+function App() {
+  
+}
+App.prototype.render = () => {
+  return (<p>function prototype render</p>);
+};
+
+// 继承React.Component
+function App() {
+  return {
+    componentDidMount() {
+      console.log('componentDidMount');
+    },
+    render() {
+      return (<p>function render</p>);
+    }
+  }
+}
+App.prototype = React.Component.prototype; // 或 new React.Component()
+
 // function 中直接return一个jsx
 function App() {
   return (<p>function jsx</p>);
 }
 ```
 
-上面这两种方式，React都是支持的，个人猜测，这是因为在js中，class也是可以用function来模拟的，有的开发者喜欢用function来实现class。
+上面的这几种方式，都是用function来实现的，但最终的效果是不一样的，不过React都是支持的（有的已经不推荐了）。个人猜测，这是因为在js中，class也是可以用function来模拟的，有的开发者喜欢用function来实现class。React为了支持多种书写方式，就得有更多的判断。
 
-那么在React内部，就得判断这两者
+前面的两种方式，虽然也可以正常运行和输出，但测试环境中，会在控制台输出错误警告，告知开发者用其他的方式来代替，如：
 
-## 4. reconcileChildren
+1. 使用class继承自React.Component来实现，class App extends React.Component {}；
+2. 仍使用function，不过可以用App.prototype = React.Component.prototype来完善；
+3. 不要使用箭头函数来实现，因为React内部会使用`new`来创建实例；
 
+React内部是怎么判断当前组件，是归到类组件里，还是归到函数组件里呢？
 
+```javascript
+// 初始化不确定类型的组件
+function mountIndeterminateComponent(
+  _current, // 好奇怪，这里为什么要用下划线开头
+  workInProgress,
+  Component,
+  renderLanes,
+) {
+  let value = renderWithHooks(
+    null,
+    workInProgress,
+    Component,
+    props,
+    context,
+    renderLanes,
+  );
 
+  if (
+    !disableModulePatternComponents &&
+    typeof value === 'object' &&
+    value !== null &&
+    typeof value.render === 'function' &&
+    value.$$typeof === undefined
+  ) {
+    // 类组件
+    workInProgress.tag = ClassComponent;
+  } else {
+    // 函数组件
+    workInProgress.tag = FunctionComponent;
+  }
+}
+```
 
+判断执行该函数后的结果value是什么类型，若value是Object类型，且有render()方法，且没有 $$typeof，表示value肯定不是 element 结构，而有render()方法的对象，则我们认为当前的 workInProgress 是类组件；否则value是element结构，则认为 workInProgres 是函数组件。 
 
+## 4. 总结
+
+我们主要学习了函数 beginWork() 的功能，是根据当前fiber的类型，用不同的方法获取到下一个应当构建为fiber节点的element。这里只讲解了几个常见的fiber类型是如何处理的，其他的若有涉及到或者想了解的，后续也可以进行补充。

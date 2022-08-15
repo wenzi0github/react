@@ -22,6 +22,11 @@ type BasicStateAction<S> = (S => S) | S;
 type Dispatch<A> = A => void;
 
 function resolveDispatcher() {
+  /**
+   * 在执行element转fiber节点的过程中，FunctionComponent会执行 renderWithHooks()，
+   * renderWithHooks() 内部会判断 current 来决定是用 mount，还是update，
+   * 共用变量 ReactCurrentDispatcher 的位置： packages/react/src/ReactSharedInternals.js
+   */
   const dispatcher = ReactCurrentDispatcher.current;
   if (__DEV__) {
     if (dispatcher === null) {
