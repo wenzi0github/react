@@ -413,6 +413,16 @@ export function enqueueCapturedUpdate<State>(
   queue.lastBaseUpdate = capturedUpdate;
 }
 
+/**
+ * 用update中的payload对 prevState 进行处理
+ * @param workInProgress
+ * @param queue
+ * @param update
+ * @param prevState
+ * @param nextProps
+ * @param instance
+ * @returns {State|any}
+ */
 function getStateFromUpdate<State>(
   workInProgress: Fiber,
   queue: UpdateQueue<State>,
@@ -421,6 +431,12 @@ function getStateFromUpdate<State>(
   nextProps: any,
   instance: any,
 ): any {
+  /**
+   * 可以看到下面也是区分了几种情况
+   * 1. ReplaceState：舍弃掉旧状态，直接用新状态替换到旧状态；
+   * 2. UpdateState：新状态和旧状态的数据合并后再返回；
+   * 3. ForceUpdate：只修改 hasForceUpdate 为true，不过返回的还是旧状态；
+   */
   switch (update.tag) {
     case ReplaceState: {
       const payload = update.payload;
@@ -459,7 +475,7 @@ function getStateFromUpdate<State>(
     case UpdateState: {
 
       const payload = update.payload;
-      let partialState; // 临时变量，用于存储传入进来的新state结果，方便最后进行assign合并处理
+      let partialState; // 用于存储计算后的新state结果，方便最后进行assign合并处理
       if (typeof payload === 'function') {
         // Updater function
         // 若 payload 是函数，则执行该函数

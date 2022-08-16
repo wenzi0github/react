@@ -547,7 +547,6 @@ function updateMemoComponent(
     current,
     renderLanes,
   );
-  console.log('hasScheduledUpdateOrContext', hasScheduledUpdateOrContext);
   if (!hasScheduledUpdateOrContext) {
     // This will be the props with resolved defaultProps,
     // unlike current.memoizedProps which will be the unresolved ones.
@@ -1377,13 +1376,8 @@ function updateHostRoot(current, workInProgress, renderLanes) {
    * current.updateQueue.shared.pending = sharedQueue， element结构在sharedQueue其中的一个update节点，
    * 其实这里只有一个update节点
    * processUpdateQueue()函数其中一个作用是将 workInProgress 中 updateQueue.shared.pending 指向的双向链表，改为单项链表，
-   * 并且把pending中的数据，放到 workInProgress.updateQueue 里的 baseState 属性中，即：
-   * workInProgress.updateQueue = {
-   *   baseState: { element },
-   *   firstBaseUpdate: null,
-   *   lastBaseUpdate: null,
-   *   shared: { pending: null }
-   * }
+   * 并且把pending中的数据，放到 workInProgress.updateQueue 里的 firstBaseUpdate 等待执行，
+   * 执行完毕后，element结构会挂载在 workInProgress.memoizedState 上。
    */
   processUpdateQueue(workInProgress, nextProps, null, renderLanes);
 

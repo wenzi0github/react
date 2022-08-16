@@ -150,7 +150,7 @@ export function enqueueUpdate<State>(
 
 ![React中shared.pending的环形链表](https://pic2.zhimg.com/80/v2-bbb9813e8e4922b05d77261fe7814e95_1440w.jpg)
 
-## 4. 执行 updateQueue 
+## 4. processUpdateQueue
 
 这是一个相对来说比较复杂的操作，要考虑任务的优先级和状态的存储。
 
@@ -475,6 +475,101 @@ export function processUpdateQueue<State>(
 2. 执行 firstBaseUpdate 链表的操作时，若当前update对应的任务的优先级符合要求，则执行；若优先级较低，则存储执行到当前节点的状态，做为下次渲染时的初始值，和接下来所有的update节点；
 3. 将执行所有操作后得到的 newState 重新给到 workInProgress.memoizedState；然后存储刚才淘汰下来的低优先级任务的链表，以便下次更新；
 
+我们在上一篇文章 [React18 源码解析之 beginWork 的操作](https://www.xiabingbao.com) 中，树的根节点是 HostRoot 类型，会调用 `processUpdateQueue()` 函数。我们在了解其内部的调度后，就更加清晰了。
+
+初始时，workInProgress.updateQueue.shared.pending中只有一个update节点，这个节点中存放着一个element结构。
+
+1. 初始的baseState为 { element: null }，我们暂时忽略其他属性；
+2. 把shared.pending中的update节点放到 firstBaseUpdate 的链表中；
+3. 任务优先级的调度，我们在初始render()阶段时，所有任务的优先级都是 `DefaultLane`，即不会跳过任何一个任务；
+
+所有的update都执行完毕后，会再执行一条：
+
+```javascript
+workInProgress.memoizedState = newState;
+
+// workInProgress.memoizedState = { element };
+```
+
+执行 `processUpdateQueue()` 完毕后，workInProgress节点的memoizedState属性上，就已经挂载element结构了。
+
 ## 5. 对上一个状态prevState进行操作
 
+函数 getStateFromUpdate()，可以调用update节点中的 payload ，对上一状态prevState进行处理。
 
+根据 `update.tag` 也是区分了几种情况：
+
+1. ReplaceState：直接舍弃掉旧状态，返回更新后的新状态；
+2. UpdateState：新状态和旧状态的数据合并后再返回；
+3. ForceUpdate：只修改 hasForceUpdate 为true，返回的还是旧状态；
+
+```javascript
+function getStateFromUpdate<State>(
+  workInProgress: Fiber,
+  queue: UpdateQueue<State>,
+  update: Update<State>,
+  prevState: State,
+  nextProps: any,
+  instance: any,
+): any {
+  /**
+   * 可以看到下面也是区分了几种情况
+   * 1. ReplaceState：舍弃掉旧状态，直接用新状态替换到旧状态；
+   * 2. UpdateState：新状态和旧状态的数据合并后再返回；
+   * 3. ForceUpdate：只修改 hasForceUpdate 为true，不过返回的还是旧状态；
+   */
+  switch (update.tag) {
+    case ReplaceState: {
+      const payload = update.payload;
+      if (typeof payload === 'function') {
+        // Updater function
+        // 若payload是function，则将prevState作为参数传入，执行payload()
+        // 直接返回该函数执行后的结果（不再与之前的数据进行合并）
+        const nextState = payload.call(instance, prevState, nextProps);
+        return nextState;
+      }
+      // 若不是function类型，则传入什么，返回什么
+      // State object
+      return payload;
+    }
+    case CaptureUpdate: {
+      workInProgress.flags =
+        (workInProgress.flags & ~ShouldCapture) | DidCapture;
+    }
+    // Intentional fallthrough
+    case UpdateState: {
+      const payload = update.payload;
+      let partialState; // 用于存储计算后的新state结果，方便最后进行assign合并处理
+      if (typeof payload === 'function') {
+        // Updater function
+        // 若payload是function，则将prevState作为参数传入，执行payload()
+        partialState = payload.call(instance, prevState, nextProps);
+      } else {
+        // Partial state object
+        // 若 payload 是变量，则直接赋值
+        partialState = payload;
+      }
+      if (partialState === null || partialState === undefined) {
+        // Null and undefined are treated as no-ops.
+        // 若得到的结果是null或undefined，则返回之前的数据
+        return prevState;
+      }
+      // Merge the partial state and the previous state.
+      // 与之前的state数据进行合并
+      return assign({}, prevState, partialState);
+    }
+    case ForceUpdate: {
+      hasForceUpdate = true;
+      return prevState;
+    }
+  }
+  return prevState;
+}
+```
+
+`update.payload`的类型不一样，执行的操作也不一样：
+
+1. payload 为 function 类型：执行该函数payload(prevState)，然后再处理后续的结果；
+2. payload 为 其他类型：我们认为是新的状态，直接使用；
+
+## 6. 

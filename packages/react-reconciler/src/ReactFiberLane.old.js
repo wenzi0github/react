@@ -208,6 +208,7 @@ function getHighestPriorityLanes(lanes: Lanes | Lane): Lanes {
  */
 export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
   // Early bailout if there's no pending work left.
+  console.log('getNextLanes', root.pendingLanes, wipLanes);
   const pendingLanes = root.pendingLanes; // 初始render()时为16，0b10000
   if (pendingLanes === NoLanes) {
     // 没有需要更新的任务，直接结束
@@ -259,8 +260,6 @@ export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
     return NoLanes;
   }
 
-  console.log('wipLanes', wipLanes);
-
   // If we're already in the middle of a render, switching lanes will interrupt
   // it and we'll lose our progress. We should only do this if the new lanes are
   // higher priority.
@@ -298,6 +297,7 @@ export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
     }
   }
 
+  // 初始render()时，下面的if和else-if都为false
   if (
     allowConcurrentByDefault &&
     (root.current.mode & ConcurrentUpdatesByDefaultMode) !== NoMode
@@ -333,6 +333,22 @@ export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
   // For those exceptions where entanglement is semantically important, like
   // useMutableSource, we should ensure that there is no partial work at the
   // time we apply the entanglement.
+  /**
+   * 机翻，可能有些不通顺。
+   *
+   * 检查缠绕通道，并将其添加到批次中。
+   *
+   * 当不允许在不包括另一个通道的批处理中渲染时，一个通道被称为与另一个相纠缠。通常，
+   * 当多个更新具有相同的源时，我们会这样做，并且我们只想响应来自该源的最新事件。
+   *
+   * 请注意，我们在*检查上述部分功之后应用纠缠*。这意味着，如果一条通道在交错事件期间缠绕，
+   * 而它已经在渲染，我们不会中断它。这是有意的，因为纠缠通常是“尽最大努力”：我们将尽最大努力在同一批中渲染车道，
+   * 但不值得为了做到这一点而放弃部分完成的工作。托多：重新考虑一下。
+   * 相反的论点是，部分功代表了一种中间状态，我们不想向用户显示这种状态。
+   * 通过花费额外的时间来完成它，我们增加了显示最终状态所需的时间，这就是他们真正在等待的。
+   *
+   * 对于那些纠缠在语义上很重要的例外情况，如useMutableSource，我们应该确保在应用纠缠时没有部分工作。
+   */
   const entangledLanes = root.entangledLanes;
   if (entangledLanes !== NoLanes) {
     const entanglements = root.entanglements;

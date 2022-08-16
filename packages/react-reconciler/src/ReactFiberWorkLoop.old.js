@@ -536,7 +536,7 @@ export function requestUpdateLane(fiber: Fiber): Lane {
   // TODO: Move this type conversion to the event priority module.
   // 在react的内部事件中触发的更新事件，比如：onClick等，会在触发事件的时候为当前事件设置一个优先级，可以直接拿来使用
   const updateLane: Lane = (getCurrentUpdatePriority(): any);
-  console.log('requestUpdateLane updateLane', updateLane);
+  console.log('[requestUpdateLane] after getCurrentUpdatePriority updateLane', updateLane);
   if (updateLane !== NoLane) {
     return updateLane;
   }
@@ -549,7 +549,7 @@ export function requestUpdateLane(fiber: Fiber): Lane {
   // TODO: Move this type conversion to the event priority module.
   // 在react的外部事件中触发的更新事件，比如：setTimeout等，会在触发事件的时候为当前事件设置一个优先级，可以直接拿来使用
   const eventLane: Lane = (getCurrentEventPriority(): any);
-  console.log('requestUpdateLane eventLane', eventLane);
+  console.log('[requestUpdateLane] after getCurrentEventPriority, eventLane', eventLane);
   return eventLane;
 }
 
@@ -579,6 +579,7 @@ export function scheduleUpdateOnFiber(
   lane: Lane,
   eventTime: number,
 ): FiberRoot | null {
+  console.log('[scheduleUpdateOnFiber]', lane);
   // 检测更新的深度，若无限更新，则抛出异常
   checkForNestedUpdates();
 
@@ -877,6 +878,7 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
 
   // We use the highest priority lane to represent the priority of the callback.
   const newCallbackPriority = getHighestPriorityLane(nextLanes);
+  console.log('getHighestPriorityLane', root.pendingLanes, nextLanes, newCallbackPriority);
 
   // Check if there's an existing task. We may be able to reuse it.
   const existingCallbackPriority = root.callbackPriority;
@@ -989,7 +991,7 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
         break;
     }
     // 并发模式
-    console.log('ensureRootIsScheduled, before performConcurrentWorkOnRoot', root);
+    console.log('ensureRootIsScheduled, before performConcurrentWorkOnRoot', root.pendingLanes);
     newCallbackNode = scheduleCallback(
       schedulerPriorityLevel,
       performConcurrentWorkOnRoot.bind(null, root),

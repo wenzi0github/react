@@ -392,6 +392,7 @@ function unstable_wrapCallback(callback) {
  * @returns
  */
 function unstable_scheduleCallback(priorityLevel, callback, options) {
+  console.log('unstable_scheduleCallback', priorityLevel, callback, options);
   // 获取当前时间
   var currentTime = getCurrentTime();
 
