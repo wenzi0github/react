@@ -917,7 +917,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     let nextOldFiber = null; // 表示 oldFiber 的下一个右紧邻兄弟 fiber
     for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
       if (oldFiber.index > newIdx) {
-        // oldIndex 大于 newIndex，那么需要旧的 fiber 等待新的 fiber，一直等到位置相同
+        // oldIndex 大于 newIndex，那么需要旧的 fiber 等待新的 fiber，一直等到位置相同。什么时候会出现这种情况？
         // 下一个比较的 fiber 还是 oldFiber
         nextOldFiber = oldFiber;
         oldFiber = null;
@@ -1275,6 +1275,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     return resultingFirstChild;
   }
 
+  // 调度文本节点
   function reconcileSingleTextNode(
     returnFiber: Fiber,
     currentFirstChild: Fiber | null,
@@ -1464,6 +1465,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     newChild: any,
     lanes: Lanes, // 优先级相关
   ): Fiber | null {
+    console.log('reconcileChildFibers', newChild);
     /**
      * 翻译下面的注释：
      * 当前函数不是递归函数。
