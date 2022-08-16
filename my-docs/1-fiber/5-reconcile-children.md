@@ -4,7 +4,7 @@
 
 ## 1. reconcileChildren
 
-函数 reconcileChildren() 是一个入口函数，这里会根据current的fiber节点的状态，分化为 mountChildFibers() 和 reconcileChildFibers()。
+函数 reconcileChildren() 是一个入口函数，这里会根据 current 的 fiber 节点的状态，分化为 mountChildFibers() 和 reconcileChildFibers()。
 
 ```javascript
 /**
@@ -16,23 +16,13 @@
  * @param nextChildren 将要构建为fiber节点的element结构
  * @param renderLanes 当前的渲染优先级
  */
-export function reconcileChildren(
-  current: Fiber | null,
-  workInProgress: Fiber,
-  nextChildren: any,
-  renderLanes: Lanes,
-) {
+export function reconcileChildren(current: Fiber | null, workInProgress: Fiber, nextChildren: any, renderLanes: Lanes) {
   if (current === null) {
     /**
      * mount阶段，这是一个还未渲染的全新组件，我们不用通过对比最小副作用来更新它的子节点。
      * 直接转换nextChildren即可，不用标记哪些节点需要删除等等
      */
-    workInProgress.child = mountChildFibers(
-      workInProgress,
-      null,
-      nextChildren,
-      renderLanes,
-    );
+    workInProgress.child = mountChildFibers(workInProgress, null, nextChildren, renderLanes);
   } else {
     /**
      * 若current不为null，则需要进行的工作：
@@ -61,7 +51,7 @@ export const reconcileChildFibers = ChildReconciler(true); // 需要收集副作
 export const mountChildFibers = ChildReconciler(false); // 不用追踪副作用
 ```
 
-这两个函数都是 ChildReconciler() 生成，只是参数不一样。可见这两个函数就区别在是否要追踪fiber节点的副作用。
+这两个函数都是 ChildReconciler() 生成，只是参数不一样。可见这两个函数就区别在是否要追踪 fiber 节点的副作用。
 
 ## 2. ChildReconciler
 
@@ -90,13 +80,13 @@ function ChildReconciler(shouldTrackSideEffects) {
 }
 ```
 
-当current对应的fiber节点为null时，那它就没有子节点，也无所谓复用和删除的说法，直接按照workInProgress里的element构建新的fiber节点即可，这时，是不用收集副作用的。
+当 current 对应的 fiber 节点为 null 时，那它就没有子节点，也无所谓复用和删除的说法，直接按照 workInProgress 里的 element 构建新的 fiber 节点即可，这时，是不用收集副作用的。
 
-若current对应的fiber节点不为null时，那么就把current的子节点拿过来，看看是否有能复用的节点，有能复用的节点就直接复用；不能复用的，比如类型发生了改变的（div标签变成了p标签），新结构里已经没有该fiber节点了等等，都是要打上标记，后续在commit阶段进行处理。
+若 current 对应的 fiber 节点不为 null 时，那么就把 current 的子节点拿过来，看看是否有能复用的节点，有能复用的节点就直接复用；不能复用的，比如类型发生了改变的（div 标签变成了 p 标签），新结构里已经没有该 fiber 节点了等等，都是要打上标记，后续在 commit 阶段进行处理。
 
 ## 3. reconcileChildFibers
 
-函数 reconcileChildFibers() 不做实际的操作，仅是根据element的类型，调用不同的方法来处理，相当于一个路由分发。
+函数 reconcileChildFibers() 不做实际的操作，仅是根据 element 的类型，调用不同的方法来处理，相当于一个路由分发。
 
 ```javascript
 /**
@@ -115,10 +105,7 @@ function reconcileChildFibers(
 ): Fiber | null {
   // 是否是顶层的没有key的fragment组件
   const isUnkeyedTopLevelFragment =
-    typeof newChild === 'object' &&
-    newChild !== null &&
-    newChild.type === REACT_FRAGMENT_TYPE &&
-    newChild.key === null;
+    typeof newChild === 'object' && newChild !== null && newChild.type === REACT_FRAGMENT_TYPE && newChild.key === null;
 
   // 若是顶层的fragment组件，则直接使用其children
   if (isUnkeyedTopLevelFragment) {
@@ -141,69 +128,32 @@ function reconcileChildFibers(
         // 一般的React组件，如<App />或<p></p>等
         return placeSingleChild(
           // 调度单体element结构的元素
-          reconcileSingleElement(
-            returnFiber,
-            currentFirstChild,
-            newChild,
-            lanes,
-          ),
+          reconcileSingleElement(returnFiber, currentFirstChild, newChild, lanes),
         );
       case REACT_PORTAL_TYPE:
-        return placeSingleChild(
-          reconcileSinglePortal(
-            returnFiber,
-            currentFirstChild,
-            newChild,
-            lanes,
-          ),
-        );
+        return placeSingleChild(reconcileSinglePortal(returnFiber, currentFirstChild, newChild, lanes));
       case REACT_LAZY_TYPE:
         const payload = newChild._payload;
         const init = newChild._init;
         // TODO: This function is supposed to be non-recursive.
-        return reconcileChildFibers(
-          returnFiber,
-          currentFirstChild,
-          init(payload),
-          lanes,
-        );
+        return reconcileChildFibers(returnFiber, currentFirstChild, init(payload), lanes);
     }
 
     if (isArray(newChild)) {
       // 若 newChild 是个数组
-      return reconcileChildrenArray(
-        returnFiber,
-        currentFirstChild,
-        newChild,
-        lanes,
-      );
+      return reconcileChildrenArray(returnFiber, currentFirstChild, newChild, lanes);
     }
 
     if (getIteratorFn(newChild)) {
-      return reconcileChildrenIterator(
-        returnFiber,
-        currentFirstChild,
-        newChild,
-        lanes,
-      );
+      return reconcileChildrenIterator(returnFiber, currentFirstChild, newChild, lanes);
     }
 
     throwOnInvalidObjectType(returnFiber, newChild);
   }
 
-  if (
-    (typeof newChild === 'string' && newChild !== '') ||
-    typeof newChild === 'number'
-  ) {
+  if ((typeof newChild === 'string' && newChild !== '') || typeof newChild === 'number') {
     // 文本节点
-    return placeSingleChild(
-      reconcileSingleTextNode(
-        returnFiber,
-        currentFirstChild,
-        '' + newChild,
-        lanes,
-      ),
-    );
+    return placeSingleChild(reconcileSingleTextNode(returnFiber, currentFirstChild, '' + newChild, lanes));
   }
 
   // Remaining cases are all treated as empty.
@@ -212,7 +162,7 @@ function reconcileChildFibers(
 }
 ```
 
-函数 reconcileChildFibers() `只处理` workInProgress 节点里的element结构，无论element是一个节点，还是一组节点，会把这一层的节点都进行转换，若element中对应的只有一个fiber节点，那就返回这个节点，若是一组数据，则会形成一个fiber单向链表，然后返回这个链表的头节点。
+函数 reconcileChildFibers() `只处理` workInProgress 节点里的 element 结构，无论 element 是一个节点，还是一组节点，会把这一层的节点都进行转换，若 element 中对应的只有一个 fiber 节点，那就返回这个节点，若是一组数据，则会形成一个 fiber 单向链表，然后返回这个链表的头节点。
 
 源码的注释里也明确说了，`reconcileChildFibers()`不是递归函数，他只处理当前层级的数据。如果还有印象的话，我们在之前讲解的函数`performUnitOfWork()`，他本身就是一个连续递归的操作。整个流程的控制权在这里。
 
@@ -234,14 +184,14 @@ function performUnitOfWork(unitOfWork: Fiber): void {
 }
 ```
 
-这里我们主要讲解一般的React类型 REACT_ELEMENT_TYPE，数组类型和普通文本类型的element的构建。
+这里我们主要讲解一般的 React 类型 REACT_ELEMENT_TYPE，数组类型和普通文本类型的 element 的构建。
 
-## 4. 单体element结构的元素 reconcileSingleElement
+## 4. 单体 element 结构的元素 reconcileSingleElement
 
-若element中只对应一个元素，且是普通React的函数组件、类组件、html标签等类型，那我们调用 reconcileSingleElement() 来处理。
+若 element 中只对应一个元素，且是普通 React 的函数组件、类组件、html 标签等类型，那我们调用 reconcileSingleElement() 来处理。
 
-1. 判断是否可以复用之前的节点，复用节点的标准是key一样、类型一样，任意一个不一样，都无法复用；
-2. 新要构建的节点是只有一个节点，但之前不一定只有一个节点，比如之前是多个li标签，新element中只有一个li标签；
+1. 判断是否可以复用之前的节点，复用节点的标准是 key 一样、类型一样，任意一个不一样，都无法复用；
+2. 新要构建的节点是只有一个节点，但之前不一定只有一个节点，比如之前是多个 li 标签，新 element 中只有一个 li 标签；
 
 若无法复用之前的节点，则将之前的节点删除，创建一个新的。
 
@@ -296,12 +246,7 @@ function reconcileSingleElement(
     // 若新节点的类型是 REACT_FRAGMENT_TYPE，则调用 createFiberFromFragment() 方法创建fiber节点
     // createFiberFromFragment() 也是调用的createFiber()，第1个参数指定fragment类型
     // 然后再调用 new FiberNode() 创建一个fiber节点实例
-    const created = createFiberFromFragment(
-      element.props.children,
-      returnFiber.mode,
-      lanes,
-      element.key,
-    );
+    const created = createFiberFromFragment(element.props.children, returnFiber.mode, lanes, element.key);
     created.return = returnFiber; // 新节点的return指向到父级节点
     // 额外的，fragment元素没有ref
     return created;
@@ -318,7 +263,7 @@ function reconcileSingleElement(
 }
 ```
 
-如何复用之前的fiber节点？我们知道[fragment标签](https://zh-hans.reactjs.org/docs/fragments.html)没有什么意义，仅仅是为了聚合内容，而且fragment标签也是可以设置key的。fragment标签与其他标签是不一样的，因此这里单独进行了处理：
+如何复用之前的 fiber 节点？我们知道[fragment 标签](https://zh-hans.reactjs.org/docs/fragments.html)没有什么意义，仅仅是为了聚合内容，而且 fragment 标签也是可以设置 key 的。fragment 标签与其他标签是不一样的，因此这里单独进行了处理：
 
 ```javascript
 // 将要构建的是fragment类型，这里在之前的节点里找到一个fragment类型的
@@ -327,7 +272,7 @@ if (child.tag === Fragment) {
    * deleteRemainingChildren(returnFiber, fiber); // 删除当前fiber及后续所有的兄弟节点
    */
   deleteRemainingChildren(returnFiber, child.sibling); // 已找到可复用的fiber节点，从下一个节点开始全部删除
-  
+
   /**
    * useFiber是将当前可以复用的节点和属性传入，然后复制合并到workInProgress上
    * @type {Fiber}
@@ -342,9 +287,7 @@ if (child.tag === Fragment) {
   if (
     child.elementType === elementType ||
     // Keep this check inline so it only runs on the false path:
-    (__DEV__
-      ? isCompatibleFamilyForHotReloading(child, element)
-      : false) ||
+    (__DEV__ ? isCompatibleFamilyForHotReloading(child, element) : false) ||
     // Lazy types should reconcile their resolved type.
     // We need to do this after the Hot Reloading check above,
     // because hot reloading has different semantics than prod because
@@ -361,7 +304,7 @@ if (child.tag === Fragment) {
     const existing = useFiber(child, element.props); // 复用child节点和element.props属性
     existing.ref = coerceRef(returnFiber, child, element); // 处理ref
     existing.return = returnFiber; // 重置新Fiber节点的return指针，指向当前Fiber节点
-  
+
     return existing;
   }
 }
@@ -369,11 +312,11 @@ if (child.tag === Fragment) {
 
 这里可能会有人有疑问，deleteRemainingChildren() 只删除后续的节点，那前面的节点怎么办呢？其实在 reconcileChildFibers() 的最后也调用了 deleteRemainingChildren()，用来删除剩余未复用的节点。
 
-### 4.1 普通React类型element转为fiber
+### 4.1 普通 React 类型 element 转为 fiber
 
-将单个普通React类型的element转为fiber节点，是 createFiberFromElement()，其又调用了 createFiberFromTypeAndProps()。
+将单个普通 React 类型的 element 转为 fiber 节点，是 createFiberFromElement()，其又调用了 createFiberFromTypeAndProps()。
 
-这里将其进行了细致的划分，如 类组件ClassComponent，普通html标签 HostComponent，strictMode等
+这里将其进行了细致的划分，如 类组件 ClassComponent，普通 html 标签 HostComponent，strictMode 等
 
 ```javascript
 export function createFiberFromTypeAndProps(
@@ -413,21 +356,19 @@ export function createFiberFromTypeAndProps(
 }
 ```
 
-我们在之前讲解函数 beginWork() 时，当fiber节点没明确类型时，判断过fiber节点的类型，那时候是执行fiber节点里的function，根据返回值来判断的。这里就不能再执行element中的函数了，否则会造成多次执行。
+我们在之前讲解函数 beginWork() 时，当 fiber 节点没明确类型时，判断过 fiber 节点的类型，那时候是执行 fiber 节点里的 function，根据返回值来判断的。这里就不能再执行 element 中的函数了，否则会造成多次执行。
 
 如当用函数来实现一个类组件时：
 
 ```javascript
-function App() {
-  
-}
+function App() {}
 App.prototype = React.Component.prototype;
 
 // React.Component
 Component.prototype.isReactComponent = {};
 ```
 
-可以看到，只需要判断函数的prototype上有没有 isReactComponent 属性即可。
+可以看到，只需要判断函数的 prototype 上有没有 isReactComponent 属性即可。
 
 React 源码中，采用了`shouldConstruct(type)`来判断。
 
@@ -449,10 +390,3 @@ function shouldConstruct(Component: Function) {
 ```
 
 判断完毕后，
-
-
-
-
-
-
-

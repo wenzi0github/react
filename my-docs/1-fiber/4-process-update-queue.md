@@ -14,9 +14,9 @@ fiber 节点上可能会存在一些在本次调度时需要执行的任务，�
 
 我们在讲解任务的执行之前，先明确几个属性的含义，方便我们理解。
 
-### 1.1 updateQueue的结构
+### 1.1 updateQueue 的结构
 
-这是 HostFiber中updateQueue的基本结构：
+这是 HostFiber 中 updateQueue 的基本结构：
 
 ```javascript
 export type UpdateQueue<State> = {|
@@ -30,12 +30,12 @@ export type UpdateQueue<State> = {|
 
 主要涉及到两个链表：
 
-1. 上次渲染时优先级不够的任务链表：每次调度时都会判断当前任务是否有足够的优先级来执行，若优先级不够，则重新存储到链表中，用于下次渲染时重新调度，而firstBaseUpdate和lastBaseUpdate就是低优先级任务的头指针和尾指针；若firstBaseUpdate为null，说明这可能是第一次渲染，或者上次所有的任务的优先级都足够，全部执行了；
+1. 上次渲染时优先级不够的任务链表：每次调度时都会判断当前任务是否有足够的优先级来执行，若优先级不够，则重新存储到链表中，用于下次渲染时重新调度，而 firstBaseUpdate 和 lastBaseUpdate 就是低优先级任务的头指针和尾指针；若 firstBaseUpdate 为 null，说明这可能是第一次渲染，或者上次所有的任务的优先级都足够，全部执行了；
 2. 本次要执行的任务：本次渲染时新增的任务，会放到 shared.pending 中，这是一个环形链表，调度前，会将其拆成单向链表，拼接到刚才的链表的后面；
 
-### 1.2 update结构
+### 1.2 update 结构
 
-updateQueue链表中的每个节点，都是一个update结构：
+updateQueue 链表中的每个节点，都是一个 update 结构：
 
 ```javascript
 const update: Update<*> = {
@@ -60,7 +60,7 @@ const update: Update<*> = {
 
 ## 2. 初始化链表 initializeUpdateQueue
 
-该方法就是初始化 fiber 中的 updateQueue结构，将fiber中的初始值`fiber.memoizedState`给到这个链表的baseState中：
+该方法就是初始化 fiber 中的 updateQueue 结构，将 fiber 中的初始值`fiber.memoizedState`给到这个链表的 baseState 中：
 
 ```javascript
 /**
@@ -84,7 +84,7 @@ export function initializeUpdateQueue<State>(fiber: Fiber): void {
 }
 ```
 
-执行该方法 `initializeUpdateQueue(fiber)` 后，fiber节点上就有了 updateQueue 属性了。
+执行该方法 `initializeUpdateQueue(fiber)` 后，fiber 节点上就有了 updateQueue 属性了。
 
 ## 3. 添加 update 操作
 
@@ -103,11 +103,7 @@ export function initializeUpdateQueue<State>(fiber: Fiber): void {
  * @param update
  * @param lane
  */
-export function enqueueUpdate<State>(
-  fiber: Fiber,
-  update: Update<State>,
-  lane: Lane,
-) {
+export function enqueueUpdate<State>(fiber: Fiber, update: Update<State>, lane: Lane) {
   const updateQueue = fiber.updateQueue;
   if (updateQueue === null) {
     // 只有在fiber已经被卸载了才会出现
@@ -155,12 +151,7 @@ export function enqueueUpdate<State>(
 这是一个相对来说比较复杂的操作，要考虑任务的优先级和状态的存储。
 
 ```javascript
-export function processUpdateQueue<State>(
-  workInProgress: Fiber,
-  props: any,
-  instance: any,
-  renderLanes: Lanes,
-): void {
+export function processUpdateQueue<State>(workInProgress: Fiber, props: any, instance: any, renderLanes: Lanes): void {
   // This is always non-null on a ClassComponent or HostRoot
   // 在 HostRoot和 ClassComponent的fiber节点中，updateQueue不可能为null
   const queue: UpdateQueue<State> = (workInProgress.updateQueue: any);
@@ -202,7 +193,7 @@ export function processUpdateQueue<State>(
       lastBaseUpdate.next = firstPendingUpdate;
     }
     lastBaseUpdate = lastPendingUpdate;
-    
+
     /**
      * 若workInProgress对应的在current的那个fiber节点，其更新队列的最后那个节点与当前的最后那个节点不一样，
      * 则我们将上面「将要更新」的链表的头指针和尾指针给到current节点的更新队列中，
@@ -366,14 +357,7 @@ export function processUpdateQueue<State>(
          * }
          * 执行 getStateFromUpdate() 后，则会将 update 中的 element 给到 newState 中
          */
-        newState = getStateFromUpdate(
-          workInProgress,
-          queue,
-          update,
-          newState,
-          props,
-          instance,
-        );
+        newState = getStateFromUpdate(workInProgress, queue, update, newState, props, instance);
         const callback = update.callback;
         if (
           callback !== null &&
@@ -472,18 +456,18 @@ export function processUpdateQueue<State>(
 我们再总结下函数 processUpdateQueue() 里的操作：
 
 1. 将当前将要进行的更新 shared.pending 的环形链表，拆开拼接到到 lastBaseUpdate 的后面；
-2. 执行 firstBaseUpdate 链表的操作时，若当前update对应的任务的优先级符合要求，则执行；若优先级较低，则存储执行到当前节点的状态，做为下次渲染时的初始值，和接下来所有的update节点；
+2. 执行 firstBaseUpdate 链表的操作时，若当前 update 对应的任务的优先级符合要求，则执行；若优先级较低，则存储执行到当前节点的状态，做为下次渲染时的初始值，和接下来所有的 update 节点；
 3. 将执行所有操作后得到的 newState 重新给到 workInProgress.memoizedState；然后存储刚才淘汰下来的低优先级任务的链表，以便下次更新；
 
 我们在上一篇文章 [React18 源码解析之 beginWork 的操作](https://www.xiabingbao.com) 中，树的根节点是 HostRoot 类型，会调用 `processUpdateQueue()` 函数。我们在了解其内部的调度后，就更加清晰了。
 
-初始时，workInProgress.updateQueue.shared.pending中只有一个update节点，这个节点中存放着一个element结构。
+初始时，workInProgress.updateQueue.shared.pending 中只有一个 update 节点，这个节点中存放着一个 element 结构。
 
-1. 初始的baseState为 { element: null }，我们暂时忽略其他属性；
-2. 把shared.pending中的update节点放到 firstBaseUpdate 的链表中；
-3. 任务优先级的调度，我们在初始render()阶段时，所有任务的优先级都是 `DefaultLane`，即不会跳过任何一个任务；
+1. 初始的 baseState 为 { element: null }，我们暂时忽略其他属性；
+2. 把 shared.pending 中的 update 节点放到 firstBaseUpdate 的链表中；
+3. 任务优先级的调度，我们在初始 render()阶段时，所有任务的优先级都是 `DefaultLane`，即不会跳过任何一个任务；
 
-所有的update都执行完毕后，会再执行一条：
+所有的 update 都执行完毕后，会再执行一条：
 
 ```javascript
 workInProgress.memoizedState = newState;
@@ -491,17 +475,17 @@ workInProgress.memoizedState = newState;
 // workInProgress.memoizedState = { element };
 ```
 
-执行 `processUpdateQueue()` 完毕后，workInProgress节点的memoizedState属性上，就已经挂载element结构了。
+执行 `processUpdateQueue()` 完毕后，workInProgress 节点的 memoizedState 属性上，就已经挂载 element 结构了。
 
-## 5. 对上一个状态prevState进行操作
+## 5. 对上一个状态 prevState 进行操作
 
-函数 getStateFromUpdate()，可以调用update节点中的 payload ，对上一状态prevState进行处理。
+函数 getStateFromUpdate()，可以调用 update 节点中的 payload ，对上一状态 prevState 进行处理。
 
 根据 `update.tag` 也是区分了几种情况：
 
 1. ReplaceState：直接舍弃掉旧状态，返回更新后的新状态；
 2. UpdateState：新状态和旧状态的数据合并后再返回；
-3. ForceUpdate：只修改 hasForceUpdate 为true，返回的还是旧状态；
+3. ForceUpdate：只修改 hasForceUpdate 为 true，返回的还是旧状态；
 
 ```javascript
 function getStateFromUpdate<State>(
@@ -533,8 +517,7 @@ function getStateFromUpdate<State>(
       return payload;
     }
     case CaptureUpdate: {
-      workInProgress.flags =
-        (workInProgress.flags & ~ShouldCapture) | DidCapture;
+      workInProgress.flags = (workInProgress.flags & ~ShouldCapture) | DidCapture;
     }
     // Intentional fallthrough
     case UpdateState: {
@@ -569,9 +552,9 @@ function getStateFromUpdate<State>(
 
 `update.payload`的类型不一样，执行的操作也不一样：
 
-1. payload 为 function 类型：执行该函数payload(prevState)，然后再处理后续的结果；
+1. payload 为 function 类型：执行该函数 payload(prevState)，然后再处理后续的结果；
 2. payload 为 其他类型：我们认为是新的状态，直接使用；
 
 ## 6. 总结
 
-我们主要学习了fiber节点中关于链表任务的调度和执行，后续涉及到hooks时，也会有类似的操作。
+我们主要学习了 fiber 节点中关于链表任务的调度和执行，后续涉及到 hooks 时，也会有类似的操作。
