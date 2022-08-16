@@ -289,16 +289,8 @@ const createFiber = function(
  */
 function shouldConstruct(Component: Function) {
   /**
-   * 在JavaScript语言中，类和function，通过typeof 判断都是'function'无法区分，
-   * 如在React中可以用两种方式来实现类组件：
-   * class App extends React.Component {}
-   * function App() {}; App.prototype = new React.Component();
-   * 上面的两种方式，虽然一个用class声明，一个用function声明，但都是类组件，
-   * 但 function Count() { return (<p></p>) } 却是函数组件
-   * 因此无法通过 typeof Component 来判断当前组件是函数组件还是类组件，只能通过类组件的特性来判断
-   * 类组件都是要继承 React.Component 的，而 React.Component 的prototype上有一个 isReactComponent 属性，值为{}
-   * 文件地址在： packages/react/src/ReactBaseClasses.js
-   * 根据js的特性，Component.prototype 本身就有的，直接使用，若没有的，则会去向其父级查找，先查找父级实例的属性或方法，若实例上没有，则查找父级的prototype上的
+   * 类组件都是要继承 React.Component 的，而 React.Component 的 prototype 上有一个 isReactComponent 属性，值为{}
+   * 文件地址在： https://github.com/wenzi0github/react/blob/1cf8fdc47b360c1f1a079209fc4d49026fafd8a4/packages/react/src/ReactBaseClasses.js#L30
    * 因此只要判断 Component.prototype 上是否有 isReactComponent 属性，即可判断出当前是类组件还是函数组件
    */
   const prototype = Component.prototype;

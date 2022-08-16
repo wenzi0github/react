@@ -1495,8 +1495,14 @@ function ChildReconciler(shouldTrackSideEffects) {
     // Handle object types
     // 判断该节点的类型
     if (typeof newChild === 'object' && newChild !== null) {
-      // 初始调用render()时，newChild为element结构的元素
-      // element结构上有$$typeof属性
+      /**
+       * 判断 newChild 的具体类型。
+       * 1. 是普通React的函数组件、类组件、html标签等
+       * 2. portal类型；
+       * 3. lazy类型；
+       * 4. newChild 是一个数组，即workInProgress节点下有并排多个结构，这时 newChild 就是一个数组
+       * 5. 其他迭代类型，我暂时也不确定这哪种？
+       */
       switch (newChild.$$typeof) {
         case REACT_ELEMENT_TYPE:
           // 一般的React组件，如<App />或<p></p>等
@@ -1556,6 +1562,7 @@ function ChildReconciler(shouldTrackSideEffects) {
       (typeof newChild === 'string' && newChild !== '') ||
       typeof newChild === 'number'
     ) {
+      // 文本类型
       return placeSingleChild(
         reconcileSingleTextNode(
           returnFiber,
@@ -1573,6 +1580,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     }
 
     // Remaining cases are all treated as empty.
+    // 标记删除没有复用上的fiber节点
     return deleteRemainingChildren(returnFiber, currentFirstChild);
   }
 

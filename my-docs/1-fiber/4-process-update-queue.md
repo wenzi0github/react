@@ -1,4 +1,4 @@
-# React18 源码解析之fiber任务的执行
+# React18 源码解析之 processUpdateQueue 的执行
 
 > 我们解析的源码是 React18.1.0 版本，请注意版本号。React 源码学习的 GitHub 仓库地址：[https://github.com/wenzi0github/react](https://github.com/wenzi0github/react)。
 
@@ -572,4 +572,6 @@ function getStateFromUpdate<State>(
 1. payload 为 function 类型：执行该函数payload(prevState)，然后再处理后续的结果；
 2. payload 为 其他类型：我们认为是新的状态，直接使用；
 
-## 6. 
+## 6. 总结
+
+我们主要学习了fiber节点中关于链表任务的调度和执行，后续涉及到hooks时，也会有类似的操作。

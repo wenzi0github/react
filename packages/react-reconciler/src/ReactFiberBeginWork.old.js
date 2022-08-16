@@ -288,10 +288,10 @@ if (__DEV__) {
  * 调和，创建或更新fiber树
  * 若current的fiber节点为null，调用 mountChildFibers 初始化
  * 若current不为空，说明要得到一棵新的fiber树，执行 reconcileChildFibers() 方法
- * @param current
- * @param workInProgress
- * @param nextChildren
- * @param renderLanes
+ * @param current 当前树中的fiber节点，可能为空
+ * @param workInProgress 将要构建树的fiber节点
+ * @param nextChildren 将要构建为fiber节点的element结构
+ * @param renderLanes 当前的渲染优先级
  */
 export function reconcileChildren(
   current: Fiber | null,
