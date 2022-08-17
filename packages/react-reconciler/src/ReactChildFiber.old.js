@@ -374,7 +374,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     lastPlacedIndex: number,
     newIndex: number,
   ): number {
-    newFiber.index = newIndex;
+    newFiber.index = newIndex; // 新fiber节点的索引
     if (!shouldTrackSideEffects) {
       // During hydration, the useId algorithm needs to know which fibers are
       // part of a list of children (arrays, iterators).
@@ -647,7 +647,11 @@ function ChildReconciler(shouldTrackSideEffects) {
       }
     }
 
-    // 这是一个空节点
+    /**
+     * 这是一个空节点，其他类型的都是返回null
+     * 比如一个表达式的结果为false，{isShow && <p>p tag</p>}，当isShow为false时，
+     * 整个表达式就为false，那么 newChild 就是 false，最终会返回一个null节点
+     */
     return null;
   }
 
@@ -917,16 +921,29 @@ function ChildReconciler(shouldTrackSideEffects) {
     let nextOldFiber = null; // 表示 oldFiber 的下一个右紧邻兄弟 fiber
     for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
       if (oldFiber.index > newIdx) {
-        // oldIndex 大于 newIndex，那么需要旧的 fiber 等待新的 fiber，一直等到位置相同。什么时候会出现这种情况？
-        // 下一个比较的 fiber 还是 oldFiber
+        /**
+         * oldIndex 大于 newIndex，那么需要旧的 fiber 等待新的 fiber，一直等到位置相同。
+         * 什么时候会出现这种情况？ https://github.com/wenzi0github/react/issues/15
+         * 当 oldFiber.index > newIdx 时，说明新的element有插入新的元素，这时将oldFiber设置为null，
+         * 然后调用 updateSlot() 时，就不再考虑复用的问题了，直接创建新的节点。
+         * 下一个旧的fiber还是当前的节点，等待index索引相等的那个child
+         */
         nextOldFiber = oldFiber;
         oldFiber = null;
       } else {
-        // 获取oldFiber的下一个兄弟节点
+        // 旧fiber的索引和newChildren的索引匹配上了，获取oldFiber的下一个兄弟节点
         nextOldFiber = oldFiber.sibling;
       }
-      // 直接调用，updateSlot()内判断了oldFiber和当前newChildren[newIdx]的key是否相等
-      // 若key匹配不上，则newFiber为null
+
+      /**
+       * 将当前节点和当前的child的element传进去，
+       * 1. 若 key 对应上
+       * 1.1 若 type 对应上，则复用之前的节点；
+       * 1.2 若 type 对应不上，则直接创建新的fiber节点；
+       * 2. 若 key 对应不上，无法复用，返回 null；
+       * 3. 若 oldFiber 为null，则直接创建新的fiber节点；
+       * @type {Fiber}
+       */
       const newFiber = updateSlot(
         returnFiber,
         oldFiber,
@@ -934,7 +951,7 @@ function ChildReconciler(shouldTrackSideEffects) {
         lanes,
       );
       if (newFiber === null) {
-        // key不相等，oldFiber无法复用，退出循环
+        // key不相等，退出循环
         // TODO: This breaks on empty slots like null children. That's
         // unfortunate because it triggers the slow path all the time. We need
         // a better way to communicate whether this was a miss or null,

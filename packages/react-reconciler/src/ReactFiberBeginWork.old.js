@@ -3993,7 +3993,6 @@ function beginWork(
       // 函数组件
       const Component = workInProgress.type; // 函数组件时，type即该函数，可以直接执行type()
       const unresolvedProps = workInProgress.pendingProps;
-      console.log('workInProgress.elementType === Component', workInProgress.elementType, Component, workInProgress.elementType === Component);
       const resolvedProps =
         workInProgress.elementType === Component // 刚才试了下，没找到不相等的案例
           ? unresolvedProps
