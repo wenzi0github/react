@@ -369,6 +369,14 @@ function ChildReconciler(shouldTrackSideEffects) {
     return clone;
   }
 
+  /**
+   * 标记最近一次访问旧fiber节点最大的下标
+   * https://zhuanlan.zhihu.com/p/250604939
+   * @param {Fiber} newFiber
+   * @param lastPlacedIndex
+   * @param newIndex
+   * @returns {number}
+   */
   function placeChild(
     newFiber: Fiber,
     lastPlacedIndex: number,
@@ -384,6 +392,12 @@ function ChildReconciler(shouldTrackSideEffects) {
     const current = newFiber.alternate;
     if (current !== null) {
       const oldIndex = current.index;
+      /**
+       * 若复用节点的索引 index 小于之前访问到的 lastPlacedIndex 小，
+       * 说明这个fiber节点插入到了前面
+       * https://pic4.zhimg.com/80/v2-c0df110682cad8be80cb028154ee3743_1440w.jpg
+       *
+       */
       if (oldIndex < lastPlacedIndex) {
         // This is a move.
         newFiber.flags |= Placement;
@@ -923,7 +937,8 @@ function ChildReconciler(shouldTrackSideEffects) {
       if (oldFiber.index > newIdx) {
         /**
          * oldIndex 大于 newIndex，那么需要旧的 fiber 等待新的 fiber，一直等到位置相同。
-         * 什么时候会出现这种情况？ https://github.com/wenzi0github/react/issues/15
+         * 什么时候会出现这种情况？当中间出现无法转为fiber节点的元素时，下次对比时，就会出现，
+         * 具体可以参考这篇文章： https://github.com/wenzi0github/react/issues/15
          * 当 oldFiber.index > newIdx 时，说明新的element有插入新的元素，这时将oldFiber设置为null，
          * 然后调用 updateSlot() 时，就不再考虑复用的问题了，直接创建新的节点。
          * 下一个旧的fiber还是当前的节点，等待index索引相等的那个child
@@ -1032,7 +1047,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     }
 
     /**
-     * 执行到这里，说明上面的两种情况都不满足，那就表示有可能顺序换了或者有新增或删减
+     * 执行到这里，说明上面的两种情况都不满足，那就表示有可能顺序换了或者其他情况
      * 即存在无法顺序复用的节点
      * 这里我们老数组中剩余的fiber节点放到map中，方便快速查找
      */
@@ -1050,7 +1065,8 @@ function ChildReconciler(shouldTrackSideEffects) {
         lanes,
       );
       if (newFiber !== null) {
-        // newFiber一般都不会为null的，为null说明某个地方可能出错了
+        // 只考虑转成fiber节点的情况，
+        // 若没有转成，则可能是类型不对，比如是boolean, null等类型
         if (shouldTrackSideEffects) {
           // 若需要记录副作用
           if (newFiber.alternate !== null) {
