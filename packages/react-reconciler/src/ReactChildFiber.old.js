@@ -371,7 +371,7 @@ function ChildReconciler(shouldTrackSideEffects) {
 
   /**
    * 标记最近一次访问旧fiber节点最大的下标
-   * https://zhuanlan.zhihu.com/p/250604939
+   * https://github.com/wenzi0github/react/issues/16
    * @param {Fiber} newFiber
    * @param lastPlacedIndex
    * @param newIndex
@@ -392,12 +392,6 @@ function ChildReconciler(shouldTrackSideEffects) {
     const current = newFiber.alternate;
     if (current !== null) {
       const oldIndex = current.index;
-      /**
-       * 若复用节点的索引 index 小于之前访问到的 lastPlacedIndex 小，
-       * 说明这个fiber节点插入到了前面
-       * https://pic4.zhimg.com/80/v2-c0df110682cad8be80cb028154ee3743_1440w.jpg
-       *
-       */
       if (oldIndex < lastPlacedIndex) {
         // This is a move.
         newFiber.flags |= Placement;
