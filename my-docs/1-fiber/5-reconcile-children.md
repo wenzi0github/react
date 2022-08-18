@@ -195,11 +195,11 @@ function performUnitOfWork(unitOfWork: Fiber): void {
 
 若无法复用之前的节点，则将之前的节点删除，创建一个新的。
 
-这里我们说的复用节点，指的是复用`current.alternate`的那个节点，因为在没有任何更新时，两棵 fiber 树是一一对应的。在产生更新后，可能就会存在对应不上的情况，因此才有了下面的各种diff对比环节。
+这里我们说的复用节点，指的是复用`current.alternate`的那个节点，因为在没有任何更新时，两棵 fiber 树是一一对应的。在产生更新后，可能就会存在对应不上的情况，因此才有了下面的各种 diff 对比环节。
 
 ### 4.1 对比判断是否有可复用的节点
 
-在对比过程中，采用了循环的方式，这是因为同一层的fiber节点是横向串联起来的。而且，虽然新节点是单个节点，但却无法保证之前的节点也是单个节点，因此这里用循环的方式查找第一个 key和节点类型都一样的节点，进行复用。
+在对比过程中，采用了循环的方式，这是因为同一层的 fiber 节点是横向串联起来的。而且，虽然新节点是单个节点，但却无法保证之前的节点也是单个节点，因此这里用循环的方式查找第一个 key 和节点类型都一样的节点，进行复用。
 
 ```javascript
 /**
@@ -316,33 +316,37 @@ if (child.tag === Fragment) {
 }
 ```
 
-这里可能会有人有疑问，deleteRemainingChildren() 只删除后续的节点，那前面的节点怎么办呢？其实在 reconcileChildFibers() 的最后也调用了 deleteRemainingChildren()，用来删除剩余未复用的节点。
+这里可能会有人有疑问，deleteRemainingChildren() 只删除后续的节点，那前面的节点怎么办呢？前面的节点已经在 while 循环中的 else 逻辑里，把匹配不上的节点标记为删除了。
 
-从这里也能看到，我们在React组件的状态变更时，尽量不要修改元素的标签类型，否则当前元素对应的fiber节点及所有的子节点都会被丢弃，然后重新创建。如
+从这里也能看到，我们在 React 组件的状态变更时，尽量不要修改元素的标签类型，否则当前元素对应的 fiber 节点及所有的子节点都会被丢弃，然后重新创建。如
 
 ```javascript
 // 原来的
 function App() {
-  return (<div>
-    <Count />
-    <p></p>
-  </div>);
+  return (
+    <div>
+      <Count />
+      <p></p>
+    </div>
+  );
 }
 
 // 经useState()修改后的
 function App() {
-  return (<secion>
-    <Count />
-    <p></p>
-  </secion>);
+  return (
+    <secion>
+      <Count />
+      <p></p>
+    </secion>
+  );
 }
 ```
 
-虽然只是外层的div标签变成了section标签，内部的都没有变化，但React在进行对比时，还是认为没有匹配上，然后把div对应的fiber节点及所有的子节点都删除了，重新从section标签开始构建新的fiber节点。
+虽然只是外层的 div 标签变成了 section 标签，内部的都没有变化，但 React 在进行对比时，还是认为没有匹配上，然后把 div 对应的 fiber 节点及所有的子节点都删除了，重新从 section 标签开始构建新的 fiber 节点。
 
 ### 4.2 复用之前的节点
 
-若在循环的过程中，找到了可复用的fiber节点。
+若在循环的过程中，找到了可复用的 fiber 节点。
 
 ```javascript
 deleteRemainingChildren(returnFiber, child.sibling); // 已找到可复用的child节点，从下一个节点开始全部删除
@@ -351,9 +355,9 @@ existing.ref = coerceRef(returnFiber, child, element); // 处理ref
 existing.return = returnFiber; // 复用的Fiber节点的return指针，指向当前Fiber节点
 ```
 
-在已经找到可以复用的child节点后，child节点后续的节点就都可以删除了，那child之前的节点呢，在复用了这个节点，后续也会删除的。
+在已经找到可以复用的 child 节点后，child 节点后续的节点就都可以删除了，那 child 之前的节点呢，在复用了这个节点，后续也会删除的。
 
-我们再看下 useFiber() 中是如何复用child这个节点的：
+我们再看下 useFiber() 中是如何复用 child 这个节点的：
 
 ```javascript
 function useFiber(fiber: Fiber, pendingProps: mixed): Fiber {
@@ -383,7 +387,7 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
      * 这是惰性创建的，以避免为从不更新的对象分配额外的对象。
      * 它还允许我们在需要时回收额外的内存
      */
-    
+
     // 若workInProgress为null，则直接创建一个新的fiber节点
     workInProgress = createFiber(
       current.tag,
@@ -430,9 +434,9 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
     currentDependencies === null
       ? null
       : {
-        lanes: currentDependencies.lanes,
-        firstContext: currentDependencies.firstContext,
-      };
+          lanes: currentDependencies.lanes,
+          firstContext: currentDependencies.firstContext,
+        };
 
   // These will be overridden during the parent's reconciliation
   workInProgress.sibling = current.sibling;
@@ -443,7 +447,7 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
 }
 ```
 
-整个React应用中，我们维护着两棵树，其实每棵树没啥差别，FiberRootNode节点中的current指针指向到哪棵树，就展示那棵树。只不过是我们把当前正在展示的那棵树叫做current，将要构建的那个叫做workInProgress。这两棵树中互相的两个节点，通过 alternate 属性进行互相的指向。
+整个 React 应用中，我们维护着两棵树，其实每棵树没啥差别，FiberRootNode 节点中的 current 指针指向到哪棵树，就展示那棵树。只不过是我们把当前正在展示的那棵树叫做 current，将要构建的那个叫做 workInProgress。这两棵树中互相的两个节点，通过 alternate 属性进行互相的指向。
 
 ### 4.3 普通 React 类型 element 转为 fiber
 
@@ -501,7 +505,7 @@ App.prototype = React.Component.prototype;
 Component.prototype.isReactComponent = {};
 ```
 
-可以看到，只要函数的 prototype 上有 isReactComponent 属性，他就肯定是类组件。但若没有这个属性，也不一定就会是函数组件，还得通过执行后的结果来判断（就是之前beginWork()里的步骤了）。
+可以看到，只要函数的 prototype 上有 isReactComponent 属性，他就肯定是类组件。但若没有这个属性，也不一定就会是函数组件，还得通过执行后的结果来判断（就是之前 beginWork()里的步骤了）。
 
 React 源码中，采用了`shouldConstruct(type)`来判断。
 
@@ -524,11 +528,11 @@ function shouldConstruct(Component: Function) {
 
 我们来汇总下类型的判断：
 
-1. 若element.type是函数，则再通过 shouldConstruct() 判断，若明确类型是类组件，则fiberTag 为 ClassComponent；若不是类组件，则还是认为他是未知组件的类型IndeterminateComponent，后续再通过执行的结果判断；
-2. 若element.type是字符串，则认为是html标签的类型HostComponent；
-3. 若是其他的类型，如 REACT_FRAGMENT_TYPE, REACT_SUSPENSE_TYPE等，则单独调用对应的方法创建fiber节点；
+1. 若 element.type 是函数，则再通过 shouldConstruct() 判断，若明确类型是类组件，则 fiberTag 为 ClassComponent；若不是类组件，则还是认为他是未知组件的类型 IndeterminateComponent，后续再通过执行的结果判断；
+2. 若 element.type 是字符串，则认为是 html 标签的类型 HostComponent；
+3. 若是其他的类型，如 REACT_FRAGMENT_TYPE, REACT_SUSPENSE_TYPE 等，则单独调用对应的方法创建 fiber 节点；
 
-若是前两种类型的，则会调用 createFiber() 创建新的fiber节点：
+若是前两种类型的，则会调用 createFiber() 创建新的 fiber 节点：
 
 ```javascript
 /**
@@ -541,22 +545,22 @@ fiber.type = resolvedType; // 测试环境会做一些处理，正式环境与el
 fiber.lanes = lanes;
 ```
 
-无论是复用之前的节点，还是新创建的fiber节点，到这里，我们总归是把element结构转成了fiber节点。
+无论是复用之前的节点，还是新创建的 fiber 节点，到这里，我们总归是把 element 结构转成了 fiber 节点。
 
 ## 5. 处理单个的文本节点 reconcileSingleTextNode
 
-文本节点处理起来相对来说比较简单，它本身就是一个字符串或者数字，没有key，没有type。
+文本节点处理起来相对来说比较简单，它本身就是一个字符串或者数字，没有 key，没有 type。
 
 ```html
 <p>this is text in p tag</p>
 <p>1234567<span>in span</span>abcdef</p>
 ```
 
-如上面的样例中，`this is text in p tag`就是单个的文本节点，但第2个p节点中，虽然`123456`, `abcdef`也是文本节点，不过这并不是单独的文本节点，而是与span标签组成了一个数组（span标签里的`in span`也是单个的文本节点）：
+如上面的样例中，`this is text in p tag`就是单个的文本节点，但第 2 个 p 节点中，虽然`123456`, `abcdef`也是文本节点，不过这并不是单独的文本节点，而是与 span 标签组成了一个数组（span 标签里的`in span`也是单个的文本节点）：
 
 ![React中多个元素组成的数组](https://www.xiabingbao.com/upload/607962fbbe542a341.png)
 
-这种情况，我们会在第6节中进行说明，这里我们只处理单独的文本节点。
+这种情况，我们会在第 6 节中进行说明，这里我们只处理单独的文本节点。
 
 ```javascript
 // 调度文本节点
@@ -588,27 +592,27 @@ function reconcileSingleTextNode(
 }
 ```
 
-这里我们要理解文本fiber节点的两个特性：
+这里我们要理解文本 fiber 节点的两个特性：
 
-1. 文本节点没有key，无法通过key来进行对比；
-2. 文本节点只有一个节点，没有兄弟节点；若新节点在只有一个文本的前提下，之前的树中有多个fiber节点，需要全部删除；
+1. 文本节点没有 key，无法通过 key 来进行对比；
+2. 文本节点只有一个节点，没有兄弟节点；若新节点在只有一个文本的前提下，之前的树中有多个 fiber 节点，需要全部删除；
 
 ## 6. 处理并列多个元素 reconcileChildrenArray
 
-当前将要构建的element是一个数组，即并列多个节点要进行处理。比如要考虑的情况：
+当前将要构建的 element 是一个数组，即并列多个节点要进行处理。比如要考虑的情况：
 
 1. 新列表和旧列表都是顺序排布的，但新列表更长，这里在新旧对比完成后，还得接着新建新增的节点；
 2. 新列表和旧列表都是顺序排布的，但新列表更短，这里在新旧对比完成后，还得删除旧列表中多余的节点；
 3. 新列表中节点的顺序发生了变化，那么就不能按照顺序一一对比了；
 
-在 fiber 结构中，并行的元素会形成单向链表，而且也没有尾指针。在fiber链表和element数组进行对比时，只能从头节点开始比较：
+在 fiber 结构中，并行的元素会形成单向链表，而且也没有尾指针。在 fiber 链表和 element 数组进行对比时，只能从头节点开始比较：
 
 1. 同一个位置（索引相同），保持不变或复用的可能性比较大；
-2. newChildren遍历完了，说明oldFiber链表的节点有剩余，需要删除；
-3. oldFiber所在链表遍历完了，新数组newChildren可能还有剩余，直接创建新节点；
-4. 无法顺序一一比较，可能顺序比较乱，将旧fiber节点存入到map中；
+2. newChildren 遍历完了，说明 oldFiber 链表的节点有剩余，需要删除；
+3. oldFiber 所在链表遍历完了，新数组 newChildren 可能还有剩余，直接创建新节点；
+4. 无法顺序一一比较，可能顺序比较乱，将旧 fiber 节点存入到 map 中；
 
-这里面还存在一种特殊的情况，`oldFiber.index > newIdx`，旧fiber节点的索引比当前索引 newIdx 大，说明之前的element有存在无法转为fiber的元素，而 newIdx 则是从0自增的，那空缺位置后面的那个旧fiber节点的索引就会大于 newIdx。当出现这种情况时，我们直接把oldFiber节点设置为null，然后在执行 updateSlot() 时创建出新的fiber节点。等待 newIdx 与 oldFiber.index 相等时，再进行相同位置的比较。[React diff 对比中，reconcileChildrenArray中什么时候会出现 oldFiber.index > newIdx？](https://github.com/wenzi0github/react/issues/15)
+这里面还存在一种特殊的情况，`oldFiber.index > newIdx`，旧 fiber 节点的索引比当前索引 newIdx 大，说明之前的 element 有存在无法转为 fiber 的元素，而 newIdx 则是从 0 自增的，那空缺位置后面的那个旧 fiber 节点的索引就会大于 newIdx。当出现这种情况时，我们直接把 oldFiber 节点设置为 null，然后在执行 updateSlot() 时创建出新的 fiber 节点。等待 newIdx 与 oldFiber.index 相等时，再进行相同位置的比较。[React diff 对比中，reconcileChildrenArray 中什么时候会出现 oldFiber.index > newIdx？](https://github.com/wenzi0github/react/issues/15)
 
 reconcileChildrenArray 的流程图，也可以直接[查看在线链接](https://docs.qq.com/flowchart/DS3l0QUlQZ2ZqbHpq)：
 
@@ -656,12 +660,7 @@ for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
    * @type {Fiber}
    * updateSlot() 具体如何实现，我们稍后讲解
    */
-  const newFiber = updateSlot(
-    returnFiber,
-    oldFiber,
-    newChildren[newIdx],
-    lanes,
-  );
+  const newFiber = updateSlot(returnFiber, oldFiber, newChildren[newIdx], lanes);
   if (newFiber === null) {
     /**
      * 新fiber节点为null，退出循环。
@@ -705,7 +704,7 @@ for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
 }
 ```
 
-我们在循环中，尽量地去通过索引index和key等标识，来复用旧fiber节点。无法复用的，就创建出新的fiber节点。
+我们在循环中，尽量地去通过索引 index 和 key 等标识，来复用旧 fiber 节点。无法复用的，就创建出新的 fiber 节点。
 
 同时，结束循环或者跳出循环的条件有多种，在循环之后，还要做出一些额外的判断。
 
@@ -727,9 +726,9 @@ if (newIdx === newChildren.length) {
 
 后续已不需要其他的操作了，直接返回新链表的头节点指针即可。
 
-### 6.3 旧fiber节点遍历完毕
+### 6.3 旧 fiber 节点遍历完毕
 
-若经过上面的循环后，旧fiber节点已遍历完毕，但 newChildren 中可能还有剩余的元素没有转为fiber节点，但现在旧fiber节点已全部都复用完了，这里直接创建新的fiber节点即可。
+若经过上面的循环后，旧 fiber 节点已遍历完毕，但 newChildren 中可能还有剩余的元素没有转为 fiber 节点，但现在旧 fiber 节点已全部都复用完了，这里直接创建新的 fiber 节点即可。
 
 ```javascript
 // 若旧数据中所有的节点都复用了，说明新数组可能还有剩余
@@ -761,7 +760,7 @@ if (oldFiber === null) {
 
 ### 6.4 节点位置发生了移动
 
-若节点的位置发生了变动，虽然在旧节点链表中也存在这个节点，但若按顺序对比时，确实不方便找到这个节点。因此可以把这些旧节点放到Map中，然后根据key或者index获取。
+若节点的位置发生了变动，虽然在旧节点链表中也存在这个节点，但若按顺序对比时，确实不方便找到这个节点。因此可以把这些旧节点放到 Map 中，然后根据 key 或者 index 获取。
 
 ```javascript
 /**
@@ -771,10 +770,7 @@ if (oldFiber === null) {
  * @param {Fiber} currentFirstChild 要存储的链表的头节点指针
  * @returns {Map<string|number, Fiber>} 返回存储所有节点的map对象
  */
-function mapRemainingChildren(
-  returnFiber: Fiber,
-  currentFirstChild: Fiber,
-): Map<string | number, Fiber> {
+function mapRemainingChildren(returnFiber: Fiber, currentFirstChild: Fiber): Map<string | number, Fiber> {
   /**
    * 将剩余所有的子节点都存放到 map 中，方便可以通过 key 快速查找该fiber节点
    * 若该 fiber 节点有 key，则使用该key作为map的key；否则使用隐性的index作为map的key
@@ -794,32 +790,23 @@ function mapRemainingChildren(
 }
 ```
 
-把所有的旧fiber节点存储到 Map 中后，就接着循环新数组 newChildren，然后从map中获取到对应的旧fiber节点（也可能不存在），再创建出新的节点。
+把所有的旧 fiber 节点存储到 Map 中后，就接着循环新数组 newChildren，然后从 map 中获取到对应的旧 fiber 节点（也可能不存在），再创建出新的节点。
 
 ```javascript
 for (; newIdx < newChildren.length; newIdx++) {
   // 复用map中存储的旧fiber节点（如果可以复用的话）
-  const newFiber = updateFromMap(
-    existingChildren,
-    returnFiber,
-    newIdx,
-    newChildren[newIdx],
-    lanes,
-  );
+  const newFiber = updateFromMap(existingChildren, returnFiber, newIdx, newChildren[newIdx], lanes);
   if (newFiber !== null) {
     // 这里只处理 newFiber 不为null的情况
     if (shouldTrackSideEffects) {
       // 若需要记录副作用
       if (newFiber.alternate !== null) {
-
         /**
          * newFiber.alternate指向到current，若current不为空，说明复用了该fiber节点，
          * 这里我们要在map中删除，因为后面会把map中剩余未复用的节点删除掉的，
          * 所以这里我们要及时把已复用的节点从map中剔除掉
          */
-        existingChildren.delete(
-          newFiber.key === null ? newIdx : newFiber.key,
-        );
+        existingChildren.delete(newFiber.key === null ? newIdx : newFiber.key);
       }
     }
     lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
@@ -842,19 +829,19 @@ if (shouldTrackSideEffects) {
 return resultingFirstChild;
 ```
 
-到这里，我们新数组 newChildren 中所有的element结构，都已转为fiber节点，不过有的可能会转为null。
+到这里，我们新数组 newChildren 中所有的 element 结构，都已转为 fiber 节点，不过有的可能会转为 null。
 
 我们再重新回到 reconcileChildFibers() 中，
 
-## 7. 几个关于fiber的工具函数
+## 7. 几个关于 fiber 的工具函数
 
-我们在上面探讨前后diff对比时，涉及到了多个对fiber处理的工具函数，但都跳过去了，这里我们挑几个稍微讲解下。
+我们在上面探讨前后 diff 对比时，涉及到了多个对 fiber 处理的工具函数，但都跳过去了，这里我们挑几个稍微讲解下。
 
-我们在diff阶段涉及到所有对fiber的增删等操作，都只是打上标记而已，并不是立刻进行处理的，是要等到commit阶段才会处理。
+我们在 diff 阶段涉及到所有对 fiber 的增删等操作，都只是打上标记而已，并不是立刻进行处理的，是要等到 commit 阶段才会处理。
 
 ### 7.1 删除单个节点 deleteChild
 
-删除单一某个fiber节点，这里会将该节点，存储到其父级fiber节点的 deletions 中。
+删除单一某个 fiber 节点，这里会将该节点，存储到其父级 fiber 节点的 deletions 中。
 
 ```javascript
 /**
@@ -883,7 +870,7 @@ function deleteChild(returnFiber: Fiber, childToDelete: Fiber): void {
 
 ### 7.2 批量删除多个节点 deleteRemainingChildren
 
-跟上面的 deleteChild 很像，但这个函数会把从某个节点开始到结尾所有的fiber节点标记为删除状态。
+跟上面的 deleteChild 很像，但这个函数会把从某个节点开始到结尾所有的 fiber 节点标记为删除状态。
 
 ```javascript
 /**
@@ -894,10 +881,7 @@ function deleteChild(returnFiber: Fiber, childToDelete: Fiber): void {
  * @param currentFirstChild 当前要删除节点的起始节点
  * @returns {null}
  */
-function deleteRemainingChildren(
-  returnFiber: Fiber,
-  currentFirstChild: Fiber | null,
-): null {
+function deleteRemainingChildren(returnFiber: Fiber, currentFirstChild: Fiber | null): null {
   if (!shouldTrackSideEffects) {
     // 不需要收集副作用时，直接返回，不进行任何操作
     return null;
@@ -916,8 +900,216 @@ function deleteRemainingChildren(
 }
 ```
 
-### 7.3 复用fiber节点 useFiber
+### 7.3 复用 fiber 节点 useFiber
 
-在没有任何更新时，React中的两棵 fiber 树是一一对应的。当 current 节点存在时，current.al
+在没有任何更新时，React 中的两棵 fiber 树是一一对应的。不过当产生更新后，前后两棵 fiber 树就不一样了。
 
+若当前要根据 element 生成一个 fiber 节点，目前有 2 种情况：
 
+1. current 节点不存在或 current.alternate 不存在，说明该 element 是新增的，直接新建即可；
+2. current.alternate 存在，则可以直接复用；
+
+在 useFiber() 中，会调用 createWorkInProgress() 来尝试复用 workInProgress 节点，生成新的 fiber 节点：
+
+```javascript
+export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
+  let workInProgress = current.alternate;
+  if (workInProgress === null) {
+    // We use a double buffering pooling technique because we know that we'll
+    // only ever need at most two versions of a tree. We pool the "other" unused
+    // node that we're free to reuse. This is lazily created to avoid allocating
+    // extra objects for things that are never updated. It also allow us to
+    // reclaim the extra memory if needed.
+    /**
+     * 翻译：我们使用双缓冲池技术，因为我们知道我们最多只需要两个版本的树。
+     * 我们可以汇集其他未使用的节点，进行自由的重用。
+     * 这是惰性创建的，以避免为从不更新的对象分配额外的对象。
+     * 它还允许我们在需要时回收额外的内存
+     */
+    workInProgress = createFiber(current.tag, pendingProps, current.key, current.mode);
+    workInProgress.elementType = current.elementType;
+    workInProgress.type = current.type;
+    workInProgress.stateNode = current.stateNode;
+
+    /**
+     * workInProgress是新创建出来的，要和current建立联系
+     * workInProgress 和 current通过 alternate 属性互相进行指向
+     */
+    workInProgress.alternate = current;
+    current.alternate = workInProgress;
+  } else {
+    workInProgress.pendingProps = pendingProps;
+    // Needed because Blocks store data on type.
+    workInProgress.type = current.type;
+
+    // We already have an alternate.
+    // Reset the effect tag.
+    workInProgress.flags = NoFlags;
+
+    // The effects are no longer valid.
+    workInProgress.subtreeFlags = NoFlags;
+    workInProgress.deletions = null;
+  }
+
+  /**
+   * 以下语句，复用current中的特性
+   */
+  // Reset all effects except static ones.
+  // Static effects are not specific to a render.
+  workInProgress.flags = current.flags & StaticMask;
+  workInProgress.childLanes = current.childLanes;
+  workInProgress.lanes = current.lanes;
+
+  workInProgress.child = current.child;
+  workInProgress.memoizedProps = current.memoizedProps;
+  workInProgress.memoizedState = current.memoizedState;
+  workInProgress.updateQueue = current.updateQueue;
+
+  // These will be overridden during the parent's reconciliation
+  workInProgress.sibling = current.sibling;
+  workInProgress.index = current.index;
+  workInProgress.ref = current.ref;
+
+  return workInProgress;
+}
+```
+
+在 createWorkInProgress() 中，若 workInProgress(current.alternate) 不存在，则新创建一个，然后与 current 建立关联；若 workInProgress 已存在，则直接复用该节点，并将 current 中的特性给到这个 workInProgress 节点。
+
+不过在 reconcileChildFibers() 中的 useFiber() 里，复用节点时，暂时还不知道它将来的使用情况，有可能只是做为单个 fiber 节点使用，因此把 index 和 sibling 进行了重置。
+
+```javascript
+/**
+ * 复用fiber节点的alternate，生成一个新的fiber节点
+ * 若alternate为空，则创建；
+ * 若不为空，则直接复用，并将传入的fiber属性和pendingProps的属性给到alternate上
+ * @param fiber
+ * @param pendingProps
+ * @returns {Fiber}
+ */
+function useFiber(fiber: Fiber, pendingProps: mixed): Fiber {
+  const clone = createWorkInProgress(fiber, pendingProps);
+
+  // 重置以下两个属性
+  clone.index = 0;
+  clone.sibling = null;
+  return clone;
+}
+```
+
+无论我们是复用，还是新创建的 fiber 节点，目前并不知道它将来怎么使用，所
+
+### 7.4 updateSlot
+
+updateSlot()和 createChild()两个方法很像，但两者最大的区别就在于：是否要复用 oldFiber 节点。
+
+- updateSlot() 会尽量复用 oldFiber 节点，若 oldFiber 的 key 和 element 的 key 对应不上，则直接返回 null，否则复用创建；
+- createChild() 则不考虑复用的问题，直接用 element 新建出新的 fiber 节点；
+
+里面要稍微注意的一点：若当前单个结构是一个数组类型，则会先创建一个 fragment 类型的 fiber 节点，然后再递归创建内部的结构。如：
+
+```jsx
+function App() {
+  const list = ['Jack', 'Tom', 'Jerry'];
+
+  return (
+    <div className="App">
+      <ul>
+        {list.map(username => (
+          <li key={username}>{username}</li>
+        ))}
+        <li>Emma</li>
+        <li>Mia</li>
+      </ul>
+    </div>
+  );
+}
+```
+
+代码中，数组 list.map()后得到的是一个数组结构，在 React 内构建 fiber 节点时，并不会把数组中的这几个 li 标签，和下面的 2 个 li 标签合到一起。实际会变成这样：
+
+```jsx
+function App() {
+  const list = ['Jack', 'Tom', 'Jerry'];
+
+  return (
+    <div className="App">
+      <ul>
+        <React.Fragment>
+          <li key="Jack">Jack</li>
+          <li key="Tom">Tom</li>
+          <li key="Jerry">Jerry</li>
+        </React.Fragment>
+        <li>Emma</li>
+        <li>Mia</li>
+      </ul>
+    </div>
+  );
+}
+```
+
+具体的实现：
+
+```javascript
+/**
+ * 创建或更新element结构 newChild 为fiber节点
+ * 若oldFiber不为空，且newChild与oldFiber的key能对得上，则复用旧fiber节点
+ * 否则，创建一个新的fiber节点
+ * 该updateSlot方法与createChild方法很像，但createChild只有创建新fiber节点的功能
+ * 而该updateSlot()方法则可以根据oldFiber，来决定是复用之前的fiber节点，还是新创建节点
+ * @param returnFiber
+ * @param oldFiber
+ * @param newChild
+ * @param lanes
+ * @returns {Fiber|null}
+ */
+function updateSlot(returnFiber: Fiber, oldFiber: Fiber | null, newChild: any, lanes: Lanes): Fiber | null {
+  // 若key相等，则更新fiber节点；否则直接返回null
+
+  const key = oldFiber !== null ? oldFiber.key : null;
+
+  if ((typeof newChild === 'string' && newChild !== '') || typeof newChild === 'number') {
+    // 文本节点本身是没有key的，若旧fiber节点有key，则说明无法复用
+    if (key !== null) {
+      return null;
+    }
+    // 若旧fiber没有key，即使他不是文本节点，我们也尝试复用
+    return updateTextNode(returnFiber, oldFiber, '' + newChild, lanes);
+  }
+
+  if (typeof newChild === 'object' && newChild !== null) {
+    // 若是一些ReactElement类型的，则判断key是否相等；相等则复用；不相等则返回null
+    switch (newChild.$$typeof) {
+      case REACT_ELEMENT_TYPE: {
+        if (newChild.key === key) {
+          // key一样才更新
+          return updateElement(returnFiber, oldFiber, newChild, lanes);
+        } else {
+          // key不一样，则直接返回null
+          return null;
+        }
+      }
+      // 其他类型暂时省略
+    }
+
+    if (isArray(newChild) || getIteratorFn(newChild)) {
+      // 当前是数组或其他迭代类型，本身是没有key的，若oldFiber有key，则无法复用
+      if (key !== null) {
+        return null;
+      }
+
+      // 若 newChild 是数组或者迭代类型，则更新为fragment类型
+      return updateFragment(returnFiber, oldFiber, newChild, lanes, null);
+    }
+  }
+
+  // 其他类型不进行处理，直接返回null
+  return null;
+}
+```
+
+updateSlot() 着重在复用上，只有前后两个 key 匹配上，才会继续后续的流程，否则直接返回 null。
+
+## 8. 总结
+
+我们主要了解了不同类型的 element 转成 fiber 节点的过程，如文本类型的，React 普通类型的 ，数组类型的，等等。尤其是在数组对比时，涉及到每个元素的新增、删除、移动等操作，对比起来要复杂一些。

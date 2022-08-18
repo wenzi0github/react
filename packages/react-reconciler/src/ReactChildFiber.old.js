@@ -730,6 +730,7 @@ function ChildReconciler(shouldTrackSideEffects) {
       }
 
       if (isArray(newChild) || getIteratorFn(newChild)) {
+        // 当前是数组或其他迭代类型，本身是没有key的，若oldFiber有key，则无法复用
         if (key !== null) {
           return null;
         }
@@ -1510,7 +1511,6 @@ function ChildReconciler(shouldTrackSideEffects) {
     newChild: any,
     lanes: Lanes, // 优先级相关
   ): Fiber | null {
-    console.log('reconcileChildFibers', newChild);
     /**
      * 翻译下面的注释：
      * 当前函数不是递归函数。
@@ -1626,8 +1626,11 @@ function ChildReconciler(shouldTrackSideEffects) {
       }
     }
 
+    /**
+     * 若 newChild 不是上面的类型，则说明 newChild 可能是boolean, null, undefined等类型，不能转为fiber节点。
+     * 为了前后保持一致，则把current中所有的子节点全部标记为删除
+     */
     // Remaining cases are all treated as empty.
-    // 标记删除没有复用上的fiber节点
     return deleteRemainingChildren(returnFiber, currentFirstChild);
   }
 
