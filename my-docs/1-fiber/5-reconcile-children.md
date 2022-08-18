@@ -195,6 +195,8 @@ function performUnitOfWork(unitOfWork: Fiber): void {
 
 若无法复用之前的节点，则将之前的节点删除，创建一个新的。
 
+这里我们说的复用节点，指的是复用`current.alternate`的那个节点，因为在没有任何更新时，两棵 fiber 树是一一对应的。在产生更新后，可能就会存在对应不上的情况，因此才有了下面的各种diff对比环节。
+
 ### 4.1 对比判断是否有可复用的节点
 
 在对比过程中，采用了循环的方式，这是因为同一层的fiber节点是横向串联起来的。而且，虽然新节点是单个节点，但却无法保证之前的节点也是单个节点，因此这里用循环的方式查找第一个 key和节点类型都一样的节点，进行复用。
@@ -599,5 +601,323 @@ function reconcileSingleTextNode(
 2. 新列表和旧列表都是顺序排布的，但新列表更短，这里在新旧对比完成后，还得删除旧列表中多余的节点；
 3. 新列表中节点的顺序发生了变化，那么就不能按照顺序一一对比了；
 
-针对上面的
+在 fiber 结构中，并行的元素会形成单向链表，而且也没有尾指针。在fiber链表和element数组进行对比时，只能从头节点开始比较：
+
+1. 同一个位置（索引相同），保持不变或复用的可能性比较大；
+2. newChildren遍历完了，说明oldFiber链表的节点有剩余，需要删除；
+3. oldFiber所在链表遍历完了，新数组newChildren可能还有剩余，直接创建新节点；
+4. 无法顺序一一比较，可能顺序比较乱，将旧fiber节点存入到map中；
+
+这里面还存在一种特殊的情况，`oldFiber.index > newIdx`，旧fiber节点的索引比当前索引 newIdx 大，说明之前的element有存在无法转为fiber的元素，而 newIdx 则是从0自增的，那空缺位置后面的那个旧fiber节点的索引就会大于 newIdx。当出现这种情况时，我们直接把oldFiber节点设置为null，然后在执行 updateSlot() 时创建出新的fiber节点。等待 newIdx 与 oldFiber.index 相等时，再进行相同位置的比较。[React diff 对比中，reconcileChildrenArray中什么时候会出现 oldFiber.index > newIdx？](https://github.com/wenzi0github/react/issues/15)
+
+reconcileChildrenArray 的流程图，也可以直接[查看在线链接](https://docs.qq.com/flowchart/DS3l0QUlQZ2ZqbHpq)：
+
+![reconcileChildrenArray 的流程图](https://www.xiabingbao.com/upload/804962fde825c976c.png)
+
+接下来我们分步骤讲解一下。
+
+### 6.1 相同索引位置对比
+
+同一个位置（索引相同），保持不变或复用的可能性比较大。不过也只能说可能性比较大，在实际开发中什么情况都会存在，我们先以最简单的方式来处理。
+
+```javascript
+let resultingFirstChild: Fiber | null = null; // 新构建出来的fiber链表的头节点
+let previousNewFiber: Fiber | null = null; // 新构建出来链表的最后那个fiber节点，用于构建整个链表
+
+let oldFiber = currentFirstChild; // 旧链表的节点，刚开始指向到第1个节点
+let lastPlacedIndex = 0; // 表示当前已经新建的 Fiber 的 index 的最大值，用于判断是插入操作，还是移动操作等
+let newIdx = 0; // 表示遍历 newChildren 的索引指针
+let nextOldFiber = null; // 下次循环要处理的fiber节点
+
+for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
+  if (oldFiber.index > newIdx) {
+    /**
+     * oldIndex 大于 newIndex，那么需要旧的 fiber 等待新的 fiber，一直等到位置相同。
+     * 那当前的 newChildren[newIdx] 则直接创建新的fiber节点
+     * 什么时候会出现这种情况？ https://github.com/wenzi0github/react/issues/15
+     * 当 oldFiber.index > newIdx 时，说明旧element对应的newIdx的位置的fiber为null，这时将oldFiber设置为null，
+     * 然后调用 updateSlot() 时，就不再考虑复用的问题了，直接创建新的节点。
+     * 下一个旧的fiber还是当前的节点，等待index索引相等的那个child
+     */
+    nextOldFiber = oldFiber;
+    oldFiber = null;
+  } else {
+    // 旧fiber的索引和newChildren的索引匹配上了，获取oldFiber的下一个兄弟节点
+    nextOldFiber = oldFiber.sibling;
+  }
+
+  /**
+   * 将当前节点和当前的child的element传进去，
+   * 1. 若 key 对应上
+   * 1.1 若 type 对应上，则复用之前的节点；
+   * 1.2 若 type 对应不上，则直接创建新的fiber节点；
+   * 2. 若 key 对应不上，无法复用，返回 null；
+   * 3. 若 oldFiber 为null，则直接创建新的fiber节点；
+   * @type {Fiber}
+   * updateSlot() 具体如何实现，我们稍后讲解
+   */
+  const newFiber = updateSlot(
+    returnFiber,
+    oldFiber,
+    newChildren[newIdx],
+    lanes,
+  );
+  if (newFiber === null) {
+    /**
+     * 新fiber节点为null，退出循环。
+     * 不过这里为null的原因有很多，比如：
+     * 1. newChildren[newIdx] 本身就是无法转为fiber的类型，如null, boolean, undefined等；
+     * 2. oldFiber 和 newChildren[newIdx] 的key没有匹配上；
+     */
+    if (oldFiber === null) {
+      oldFiber = nextOldFiber;
+    }
+    break;
+  }
+  if (shouldTrackSideEffects) {
+    if (oldFiber && newFiber.alternate === null) {
+      // We matched the slot, but we didn't reuse the existing fiber, so we
+      // need to delete the existing child.
+      // 若旧fiber节点存在，但新节点并没有复用该节点，则将该旧节点删除
+      deleteChild(returnFiber, oldFiber);
+    }
+  }
+
+  /**
+   * 此方法是一种顺序优化手段，lastPlacedIndex 一直在更新，初始为 0，
+   * 表示访问过的节点在旧集合中最右的位置（即最大的位置）。
+   */
+  lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+
+  /**
+   * resultingFirstChild：新fiber链表的头节点
+   * previousNewFiber：用于拼接整个链表
+   */
+  if (previousNewFiber === null) {
+    // 若整个链表为空，则头指针指向到newFiber
+    resultingFirstChild = newFiber;
+  } else {
+    // 若链表不为空，则将newFiber放到链表的后面
+    previousNewFiber.sibling = newFiber;
+  }
+  previousNewFiber = newFiber; // 指向到当前节点，方便下次拼接
+  oldFiber = nextOldFiber; // 下一个旧fiber节点
+}
+```
+
+我们在循环中，尽量地去通过索引index和key等标识，来复用旧fiber节点。无法复用的，就创建出新的fiber节点。
+
+同时，结束循环或者跳出循环的条件有多种，在循环之后，还要做出一些额外的判断。
+
+### 6.2 新节点遍历完毕
+
+若经过上面的循环后，新节点已全部创建完毕，这说明可能经过了删除操作，新节点的数量更少，这里我们直接把剩下的旧节点删除了就行。
+
+```javascript
+// 新索引 newIdx 跟newChildren的长度一样，说明新数组已遍历完毕
+// 老数组后面可能有剩余的，需要删除
+if (newIdx === newChildren.length) {
+  // 删除旧链表中剩余的节点
+  deleteRemainingChildren(returnFiber, oldFiber);
+
+  // 返回新链表的头节点指针
+  return resultingFirstChild;
+}
+```
+
+后续已不需要其他的操作了，直接返回新链表的头节点指针即可。
+
+### 6.3 旧fiber节点遍历完毕
+
+若经过上面的循环后，旧fiber节点已遍历完毕，但 newChildren 中可能还有剩余的元素没有转为fiber节点，但现在旧fiber节点已全部都复用完了，这里直接创建新的fiber节点即可。
+
+```javascript
+// 若旧数据中所有的节点都复用了，说明新数组可能还有剩余
+if (oldFiber === null) {
+  // 这里已经没有旧的fiber节点可以复用了，然后我们就选择直接创建的方式
+  for (; newIdx < newChildren.length; newIdx++) {
+    const newFiber = createChild(returnFiber, newChildren[newIdx], lanes);
+    if (newFiber === null) {
+      continue;
+    }
+    lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+
+    // 接着上面的链表往后拼接
+    if (previousNewFiber === null) {
+      // 记录起始的第1个节点
+      resultingFirstChild = newFiber;
+    } else {
+      previousNewFiber.sibling = newFiber;
+    }
+    previousNewFiber = newFiber;
+  }
+
+  // 返回新链表的头节点指针
+  return resultingFirstChild;
+}
+```
+
+到这里，目前简单的对数组进行增、删节点的对比还是比较简单，接下来就是移动的情况是如何进行复用的呢？
+
+### 6.4 节点位置发生了移动
+
+若节点的位置发生了变动，虽然在旧节点链表中也存在这个节点，但若按顺序对比时，确实不方便找到这个节点。因此可以把这些旧节点放到Map中，然后根据key或者index获取。
+
+```javascript
+/**
+ * 将 currentFirstChild 和后续所有的兄弟节点放到map中，方便查找
+ * 若该 fiber 节点有 key，则使用该key作为map的key；否则使用隐性的index作为map的key
+ * @param {Fiber} returnFiber 要存储的节点的父级节点，但这个参数没用到
+ * @param {Fiber} currentFirstChild 要存储的链表的头节点指针
+ * @returns {Map<string|number, Fiber>} 返回存储所有节点的map对象
+ */
+function mapRemainingChildren(
+  returnFiber: Fiber,
+  currentFirstChild: Fiber,
+): Map<string | number, Fiber> {
+  /**
+   * 将剩余所有的子节点都存放到 map 中，方便可以通过 key 快速查找该fiber节点
+   * 若该 fiber 节点有 key，则使用该key作为map的key；否则使用隐性的index作为map的key
+   */
+  const existingChildren: Map<string | number, Fiber> = new Map();
+
+  let existingChild = currentFirstChild;
+  while (existingChild !== null) {
+    if (existingChild.key !== null) {
+      existingChildren.set(existingChild.key, existingChild);
+    } else {
+      existingChildren.set(existingChild.index, existingChild);
+    }
+    existingChild = existingChild.sibling;
+  }
+  return existingChildren;
+}
+```
+
+把所有的旧fiber节点存储到 Map 中后，就接着循环新数组 newChildren，然后从map中获取到对应的旧fiber节点（也可能不存在），再创建出新的节点。
+
+```javascript
+for (; newIdx < newChildren.length; newIdx++) {
+  // 复用map中存储的旧fiber节点（如果可以复用的话）
+  const newFiber = updateFromMap(
+    existingChildren,
+    returnFiber,
+    newIdx,
+    newChildren[newIdx],
+    lanes,
+  );
+  if (newFiber !== null) {
+    // 这里只处理 newFiber 不为null的情况
+    if (shouldTrackSideEffects) {
+      // 若需要记录副作用
+      if (newFiber.alternate !== null) {
+
+        /**
+         * newFiber.alternate指向到current，若current不为空，说明复用了该fiber节点，
+         * 这里我们要在map中删除，因为后面会把map中剩余未复用的节点删除掉的，
+         * 所以这里我们要及时把已复用的节点从map中剔除掉
+         */
+        existingChildren.delete(
+          newFiber.key === null ? newIdx : newFiber.key,
+        );
+      }
+    }
+    lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+    // 接着之前的链表进行拼接
+    if (previousNewFiber === null) {
+      resultingFirstChild = newFiber;
+    } else {
+      previousNewFiber.sibling = newFiber;
+    }
+    previousNewFiber = newFiber;
+  }
+}
+
+if (shouldTrackSideEffects) {
+  // 将map中没有复用的fiber节点添加到删除的副作用队列中，等待删除
+  existingChildren.forEach(child => deleteChild(returnFiber, child));
+}
+
+// 返回新链表的头节点指针
+return resultingFirstChild;
+```
+
+到这里，我们新数组 newChildren 中所有的element结构，都已转为fiber节点，不过有的可能会转为null。
+
+我们再重新回到 reconcileChildFibers() 中，
+
+## 7. 几个关于fiber的工具函数
+
+我们在上面探讨前后diff对比时，涉及到了多个对fiber处理的工具函数，但都跳过去了，这里我们挑几个稍微讲解下。
+
+我们在diff阶段涉及到所有对fiber的增删等操作，都只是打上标记而已，并不是立刻进行处理的，是要等到commit阶段才会处理。
+
+### 7.1 删除单个节点 deleteChild
+
+删除单一某个fiber节点，这里会将该节点，存储到其父级fiber节点的 deletions 中。
+
+```javascript
+/**
+ * 将returnFiber子元素中，需要删除的fiber节点放到deletions的副作用数组中
+ * 该方法只删除一个节点
+ * 当前diff时不会立即删除，而是在更新时，将该数组中的fiber节点进行删除
+ * @param returnFiber
+ * @param childToDelete
+ */
+function deleteChild(returnFiber: Fiber, childToDelete: Fiber): void {
+  if (!shouldTrackSideEffects) {
+    // 不需要收集副作用时，直接返回，不进行任何操作
+    return;
+  }
+  const deletions = returnFiber.deletions;
+  if (deletions === null) {
+    // 若副作用数组为空，则创建一个
+    returnFiber.deletions = [childToDelete];
+    returnFiber.flags |= ChildDeletion;
+  } else {
+    // 否则直接推入
+    deletions.push(childToDelete);
+  }
+}
+```
+
+### 7.2 批量删除多个节点 deleteRemainingChildren
+
+跟上面的 deleteChild 很像，但这个函数会把从某个节点开始到结尾所有的fiber节点标记为删除状态。
+
+```javascript
+/**
+ * 删除returnFiber的子元素中，currentFirstChild和其兄弟元素
+ * 即把currentFirstChild及其兄弟元素，都放到returnFiber的deletions的副作用数组中，等待删除
+ * 这是一个批量删除节点的方法
+ * @param returnFiber 要删除节点的父级节点
+ * @param currentFirstChild 当前要删除节点的起始节点
+ * @returns {null}
+ */
+function deleteRemainingChildren(
+  returnFiber: Fiber,
+  currentFirstChild: Fiber | null,
+): null {
+  if (!shouldTrackSideEffects) {
+    // 不需要收集副作用时，直接返回，不进行任何操作
+    return null;
+  }
+
+  /**
+   * 从 currentFirstChild 节点开始，把当前及后续所有的节点，通过 deleteChild() 方法标记为删除状态
+   * @type {Fiber}
+   */
+  let childToDelete = currentFirstChild;
+  while (childToDelete !== null) {
+    deleteChild(returnFiber, childToDelete);
+    childToDelete = childToDelete.sibling;
+  }
+  return null;
+}
+```
+
+### 7.3 复用fiber节点 useFiber
+
+在没有任何更新时，React中的两棵 fiber 树是一一对应的。当 current 节点存在时，current.al
+
 

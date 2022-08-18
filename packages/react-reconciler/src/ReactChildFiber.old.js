@@ -325,11 +325,11 @@ function ChildReconciler(shouldTrackSideEffects) {
   }
 
   /**
-   * 将currentFirstChild和后续所有的兄弟节点放到map中，方便查找
-   * 若该fiber节点有key，则使用该key作为map的key；否则使用隐性的index作为map的key
-   * @param returnFiber
-   * @param currentFirstChild
-   * @returns {Map<string|number, Fiber>}
+   * 将 currentFirstChild 和后续所有的兄弟节点放到map中，方便查找
+   * 若该 fiber 节点有 key，则使用该key作为map的key；否则使用隐性的index作为map的key
+   * @param {Fiber} returnFiber 要存储的节点的父级节点，但这个参数没用到
+   * @param {Fiber} currentFirstChild 要存储的链表的头节点指针
+   * @returns {Map<string|number, Fiber>} 返回存储所有节点的map对象
    */
   function mapRemainingChildren(
     returnFiber: Fiber,
@@ -338,6 +338,10 @@ function ChildReconciler(shouldTrackSideEffects) {
     // Add the remaining children to a temporary map so that we can find them by
     // keys quickly. Implicit (null) keys get added to this set with their index
     // instead.
+    /**
+     * 将剩余所有的子节点都存放到 map 中，方便可以通过 key 快速查找该fiber节点
+     * 若该 fiber 节点有 key，则使用该key作为map的key；否则使用隐性的index作为map的key
+     */
     const existingChildren: Map<string | number, Fiber> = new Map();
 
     let existingChild = currentFirstChild;
@@ -369,6 +373,15 @@ function ChildReconciler(shouldTrackSideEffects) {
     return clone;
   }
 
+  /**
+   * 此方法是一种顺序优化手段，lastPlacedIndex 一直在更新，初始为 0，
+   * 表示访问过的节点在旧集合中最右的位置（即最大的位置）。
+   * https://github.com/wenzi0github/react/issues/16
+   * @param newFiber
+   * @param lastPlacedIndex
+   * @param newIndex
+   * @returns {number}
+   */
   function placeChild(
     newFiber: Fiber,
     lastPlacedIndex: number,
@@ -918,13 +931,13 @@ function ChildReconciler(shouldTrackSideEffects) {
     let oldFiber = currentFirstChild; // 旧链表的节点，刚开始指向到第1个节点
     let lastPlacedIndex = 0; // 表示当前已经新建的 Fiber 的 index 的最大值，为 placeChild 函数服务
     let newIdx = 0; // 表示遍历 newChildren 的索引指针
-    let nextOldFiber = null; // 表示 oldFiber 的下一个右紧邻兄弟 fiber
+    let nextOldFiber = null; // 下次循环要处理的fiber节点
     for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
       if (oldFiber.index > newIdx) {
         /**
          * oldIndex 大于 newIndex，那么需要旧的 fiber 等待新的 fiber，一直等到位置相同。
          * 什么时候会出现这种情况？ https://github.com/wenzi0github/react/issues/15
-         * 当 oldFiber.index > newIdx 时，说明新的element有插入新的元素，这时将oldFiber设置为null，
+         * 当 oldFiber.index > newIdx 时，说明旧element对应的newIdx的位置的fiber为null，这时将oldFiber设置为null，
          * 然后调用 updateSlot() 时，就不再考虑复用的问题了，直接创建新的节点。
          * 下一个旧的fiber还是当前的节点，等待index索引相等的那个child
          */
@@ -951,7 +964,12 @@ function ChildReconciler(shouldTrackSideEffects) {
         lanes,
       );
       if (newFiber === null) {
-        // key不相等，退出循环
+        /**
+         * 新fiber节点为null，退出循环。
+         * 不过这里为null的原因有很多，比如：
+         * 1. newChildren[newIdx] 本身就是无法转为fiber的类型，如null, boolean, undefined等；
+         * 2. oldFiber 和 newChildren[newIdx] 的key没有匹配上；
+         */
         // TODO: This breaks on empty slots like null children. That's
         // unfortunate because it triggers the slow path all the time. We need
         // a better way to communicate whether this was a miss or null,
@@ -969,7 +987,17 @@ function ChildReconciler(shouldTrackSideEffects) {
           deleteChild(returnFiber, oldFiber);
         }
       }
+
+      /**
+       * 此方法是一种顺序优化手段，lastPlacedIndex 一直在更新，初始为 0，
+       * 表示访问过的节点在旧集合中最右的位置（即最大的位置）。
+       */
       lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+
+      /**
+       * resultingFirstChild：新fiber链表的头节点
+       * previousNewFiber：用于拼接整个链表
+       */
       if (previousNewFiber === null) {
         // TODO: Move out of the loop. This only happens for the first run.
         // 若整个链表为空，则头指针指向到newFiber
@@ -982,8 +1010,8 @@ function ChildReconciler(shouldTrackSideEffects) {
         // 若链表不为空，则将newFiber放到链表的后面
         previousNewFiber.sibling = newFiber;
       }
-      previousNewFiber = newFiber;
-      oldFiber = nextOldFiber;
+      previousNewFiber = newFiber; // 指向到当前节点，方便下次拼接
+      oldFiber = nextOldFiber; // 下一个旧fiber节点
     }
 
     // 退出循环，要么说明所有的节点都可以复用，正常循环完毕；要么是有一个节点无法复用
@@ -1002,7 +1030,7 @@ function ChildReconciler(shouldTrackSideEffects) {
       return resultingFirstChild;
     }
 
-    // 若旧数据中所有的节点都复用了，说明新数组还有剩余
+    // 若旧数据中所有的节点都复用了，说明新数组可能还有剩余
     if (oldFiber === null) {
       // If we don't have any more existing children we can choose a fast path
       // since the rest will all be insertions.
@@ -1032,7 +1060,7 @@ function ChildReconciler(shouldTrackSideEffects) {
     }
 
     /**
-     * 执行到这里，说明上面的两种情况都不满足，那就表示有可能顺序换了或者有新增或删减
+     * 执行到这里，说明上面的两种情况都不满足，那就表示有可能顺序换了
      * 即存在无法顺序复用的节点
      * 这里我们老数组中剩余的fiber节点放到map中，方便快速查找
      */
@@ -1050,7 +1078,7 @@ function ChildReconciler(shouldTrackSideEffects) {
         lanes,
       );
       if (newFiber !== null) {
-        // newFiber一般都不会为null的，为null说明某个地方可能出错了
+        // 这里只处理 newFiber 不为null的情况
         if (shouldTrackSideEffects) {
           // 若需要记录副作用
           if (newFiber.alternate !== null) {
