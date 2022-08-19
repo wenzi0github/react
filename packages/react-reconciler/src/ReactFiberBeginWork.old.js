@@ -3594,7 +3594,6 @@ function checkScheduledUpdateOrContext(
   // Before performing an early bailout, we must check if there are pending
   // updates or context.
   const updateLanes = current.lanes;
-  console.log('checkScheduledUpdateOrContext', updateLanes, renderLanes);
   if (includesSomeLane(updateLanes, renderLanes)) {
     return true;
   }

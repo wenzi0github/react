@@ -298,7 +298,11 @@ const Start = (
 
 ## 3. fiber 结构
 
-在上面通过 babel 转换后的 element 结构的数据，会在 render()方法中的某个阶段将其转为 fiber 结构。render()方法里具体怎样转换的，我们稍后再讲，这里我们只是看下 fiber 节点的结构。
+在上面通过 babel 转换后的 element 结构的数据，会在 render()方法中的某个阶段将其转为 fiber 结构。render()方法里具体怎样转换的，我们以后的文章再讲，这里我们只是看下 fiber 节点的结构。
+
+### 3.1 单个 fiber 的属性
+
+我们先看看一个 fiber 节点都有哪些属性，这些属性都是什么含义。
 
 ```javascript
 /**
@@ -351,7 +355,7 @@ function FiberNode(tag: WorkTag, pendingProps: mixed, key: null | string, mode: 
    * return: 指向到父级fiber节点；
    * child: 指向到该节点的第1个子节点；
    * sibling: 指向到该节点的下一个兄弟节点；
-   * 如图所示：https://pic4.zhimg.com/80/v2-a825372d761879bd1639016e6db93947_1440w.jpg
+   * 如图所示：https://www.xiabingbao.com/upload/386262ff06785779c.jpg
    */
   this.return = null;
   this.child = null;
@@ -389,6 +393,22 @@ function FiberNode(tag: WorkTag, pendingProps: mixed, key: null | string, mode: 
 React 中大到组件，小到 html 标签，都会转为 fiber 节点构建的 fiber 链表。
 
 ![阿欧](https://www.xiabingbao.com/upload/831862e938a789a63.jpeg)
+
+### 3.2 fiber 树的构成
+
+jsx 中的所有节点都会转为 fiber 节点，那他们是怎么组合起来的呢？
+
+正如上面代码中的注释中说到的，每个 fiber 节点都有 3 个指针：
+
+- return: 指向到父级的 fiber 节点；
+- child: 指向到该节点的第 1 个子节点；若想访问其他的子节点，可以通过下面的`sibling`指针来访问；
+- sibling: 指向到该节点的下一个兄弟节点；
+
+如图所示：
+
+![react中fiber节点的指针](https://www.xiabingbao.com/upload/386262ff06785779c.jpg)
+
+并列的节点，会形成单向链表，父级节点只会指向到这个单向链表的头节点。正如上图中的 p 标签和 span 标签。
 
 ## 4. 为什么要使用 fiber 结构
 

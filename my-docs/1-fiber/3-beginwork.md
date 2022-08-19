@@ -27,9 +27,9 @@ beginWork()处理完当前 fiber 节点的 element 结构后，就会到一个�
 
 ![判断workInProgress是否可以提前退出](https://mat1.gtimg.com/qqcdn/tupload/1660031611757.png)
 
-更具体的流程图可以查看这个： [判断 workInProgress 是否可以提前退出](https://docs.qq.com/flowchart/DS1ZLYVpydkdpQmlo) 。
+更具体的流程图可以查看这个： [判断 workInProgress 是否可以提前退出](https://docs.qq.com/flowchart/DS1ZLYVpydkdpQmlo)。
 
-若没有任何更新时，可以提前退出当前的流程，进入到函数 attemptEarlyBailoutIfNoScheduledUpdate()。
+若 props 没有任何变化，且没有其他的任何更新时，可以提前退出当前的流程，进入到函数 attemptEarlyBailoutIfNoScheduledUpdate()。
 
 不过在我们初始渲染阶段，通过 checkScheduledUpdateOrContext() 得到 hasScheduledUpdateOrContext 是 true，但 current.flags & ForceUpdateForLegacySuspense 又为 NoFlags：
 
