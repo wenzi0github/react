@@ -157,10 +157,19 @@ function reconcileChildFibers(
   }
 
   // Remaining cases are all treated as empty.
-  // 上面都操作完成后，删除剩余没有复用的子节点
+  // 若没有匹配到任何类型，说明当前newChild无法转为fiber节点，
+  // 相应的，也应当把current中所有的fiber节点删除
   return deleteRemainingChildren(returnFiber, currentFirstChild);
 }
 ```
+
+我们先来看下源码 reconcileChildFibers() 中都判断了 newChild 的哪些类型：
+
+1. 是否是顶层的 fragment 元素，如在执行 render()时，用的是 fragment 标签（<></> 或 <React.Fragment></React.Fragment>）包裹，则表示该元素顶级的 fragment 组件，这里直接使用其 children；
+2. 合法的 ReactElement，如通过 createElement、creatPortal 等创建创建的元素，只是\$\$typeof 不一样；这里也把 lazy type 归类到了这里；
+3. 普通数组，每一项都是合法的其他元素；
+4. Iterator，跟数组类似，只是遍历方式不同；
+5. string 或 number 类型：如(<div>abc</div>)里的 abc 即为字符串类型的文本；
 
 函数 reconcileChildFibers() `只处理` workInProgress 节点里的 element 结构，无论 element 是一个节点，还是一组节点，会把这一层的节点都进行转换，若 element 中对应的只有一个 fiber 节点，那就返回这个节点，若是一组数据，则会形成一个 fiber 单向链表，然后返回这个链表的头节点。
 
