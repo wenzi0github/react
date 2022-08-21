@@ -448,7 +448,6 @@ export function renderWithHooks<Props, SecondArg>(
         ? HooksDispatcherOnMount
         : HooksDispatcherOnUpdate;
   }
-  console.log('ReactCurrentDispatcher.current', ReactCurrentDispatcher.current);
 
   /**
    * 执行 Function Component，将我们写的jsx通过babel编译为element结构，并返回
