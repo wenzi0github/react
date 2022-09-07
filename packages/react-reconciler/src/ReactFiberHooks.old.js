@@ -1599,7 +1599,7 @@ function mountState<S>(
   // 链表中该hook节点的属性也会同步修改为initialState
   hook.memoizedState = hook.baseState = initialState;
 
-  // 为该hook绑定更新的链表
+  // 为该 hook 绑定更新的链表
   const queue: UpdateQueue<S, BasicStateAction<S>> = {
     pending: null,
     interleaved: null,
@@ -1797,6 +1797,7 @@ function mountEffectImpl(fiberFlags, hookFlags, create, deps): void {
     undefined,
     nextDeps,
   );
+  // useEffect()并不需要返回值，这里没有return
 }
 
 /**
