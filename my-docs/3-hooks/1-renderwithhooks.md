@@ -9,7 +9,7 @@
 我们先来看段 hooks 实际应用的代码：
 
 ```javascript
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react';
 
 function App() {
   const [count, setCount] = useState(0);
@@ -41,9 +41,7 @@ react 源码对应的位置是 packages/react/index.js，从这里寻找后发�
 所有的 hooks 里都会执行一个 `resolveDispatcher()` 方法，如 useState()这个 hook：
 
 ```javascript
-export function useState<S>(
-  initialState: (() => S) | S
-): [S, Dispatch<BasicStateAction<S>>] {
+export function useState<S>(initialState: (() => S) | S): [S, Dispatch<BasicStateAction<S>>] {
   const dispatcher = resolveDispatcher();
   return dispatcher.useState(initialState);
 }
@@ -54,7 +52,7 @@ export function useState<S>(
 我们来看看：
 
 ```javascript
-import ReactCurrentDispatcher from "./ReactCurrentDispatcher";
+import ReactCurrentDispatcher from './ReactCurrentDispatcher';
 
 function resolveDispatcher() {
   /**
@@ -86,20 +84,20 @@ function renderWithHooks() {
   // 稍后函数组件拿到的hooks，都是从 ReactCurrentDispatcher.current 中拿到的
   // 共用变量 ReactCurrentDispatcher 的位置： packages/react/src/ReactSharedInternals.js
   ReactCurrentDispatcher.current =
-    current === null || current.memoizedState === null
-      ? HooksDispatcherOnMount
-      : HooksDispatcherOnUpdate;
+    current === null || current.memoizedState === null ? HooksDispatcherOnMount : HooksDispatcherOnUpdate;
 
   // 执行函数
   let children = Component(props, secondArg);
 }
 ```
 
-可见在执行诸如`function App(){}`等函数组件前，要挂载初始 hooks 还是更新 hooks，就已经决定好了。具体源码位置：[ReactFiberHooks.old.js#L446](https://github.com/wenzi0github/react-source/blob/34fc2eed3ed7c79686432d41aa402bf991840787/packages/react-reconciler/src/ReactFiberHooks.old.js#L446)。
-
 我们知道 React 中维护着两棵树，若 current 节点或 current.memoizedState 为空，说明现在没有这个 fiber 节点，或者该节点之前没有对应的 hooks，那么我们就调用 mount 方式来初始 hooks，否则就调用 update 方式来更新 hooks。
 
-上面第 2 节和当前的 ReactCurrentDispatcher，是同一个，因此在这里挂载数据后，在第 2 节中就可以直接读取出来。
+mount 阶段的 hooks 仅仅是用来进行 hooks 节点的生成，然后形成链表挂载在函数的 fiber 节点上。update 阶段，则相对来说稍微复杂一些，可能会有触发函数二次执行渲染的可能。
+
+我们在函数组件中使用的 useState(), useEffect()等，仅仅是先挂了一个名字，具体比如是执行 mountState()，还是 updateState()，是在更新时，执行 renderWithHooks()的函数逻辑里，在运行`Component()`之前，才去判断的。具体源码位置：[ReactFiberHooks.old.js#L446](https://github.com/wenzi0github/react-source/blob/34fc2eed3ed7c79686432d41aa402bf991840787/packages/react-reconciler/src/ReactFiberHooks.old.js#L446)。
+
+上面第 2 节函数 resolveDispatcher() 使用的 ReactCurrentDispatcher 和当前 renderWithHooks()里的 ReactCurrentDispatcher ，是同一个，因此在这里挂载数据后，在第 2 节中就可以直接读取出来。
 
 HooksDispatcherOnMount 和 HooksDispatcherOnUpdate 两个的区别在于：
 
@@ -108,4 +106,10 @@ HooksDispatcherOnMount 和 HooksDispatcherOnUpdate 两个的区别在于：
 
 ## 4. hooks 的挂载
 
-即 hooks 的初始过程。我们以 useState()为例，初始阶段，调用的是 mountState()。
+我们这里不讲某个具体的 hook 的使用方式和内部原理，主要是来说下这些 hooks 放在哪儿，是以一种怎样的方式存储的。
+
+在 [packages/react-reconciler/src/ReactFiberHooks.old.js](https://github.com/wenzi0github/react/blob/main/packages/react-reconciler/src/ReactFiberHooks.old.js) 中，观察下诸如 mountState(), mountEffect(), mountRef() 等几个 mount 阶段的 hooks，都会先调用 `mountWorkInProgressHook()` 来得到一个 hook 节点。
+
+```javascript
+
+```

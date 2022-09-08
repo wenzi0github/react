@@ -803,6 +803,8 @@ function updateReducer<S, I, A>(
   const hook = updateWorkInProgressHook();
   const queue = hook.queue;
 
+  console.log('updateReducer', hook, queue);
+
   if (queue === null) {
     throw new Error(
       'Should have a queue. This is likely a bug in React. Please file an issue.',
