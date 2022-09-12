@@ -407,6 +407,12 @@ export function renderWithHooks<Props, SecondArg>(
       current !== null && current.type !== workInProgress.type;
   }
 
+  /**
+   * 当他赋值给 currentlyRenderingFiber 后，就会把所有的hooks清空，
+   * 在执行下面的 children = Component(props, secondArg)，又会把新的hooks重新拼接到 memoizedState 上
+   * 根据js中的`对象引用`的特性，修改 currentlyRenderingFiber 中的 memoizedState 属性，
+   * 就相当于修改 workInProgress.memoizedState
+   */
   workInProgress.memoizedState = null;
   workInProgress.updateQueue = null;
   workInProgress.lanes = NoLanes;
@@ -516,10 +522,10 @@ export function renderWithHooks<Props, SecondArg>(
     currentHook !== null && currentHook.next !== null;
 
   renderLanes = NoLanes;
-  currentlyRenderingFiber = (null: any);
+  currentlyRenderingFiber = (null: any); // 函数执行完了，可以将指向到 workInProgress的临时变量，设置为null
 
-  currentHook = null;
-  workInProgressHook = null;
+  currentHook = null; // 函数执行完了，所有指向hooks链表的临时变量，设置null
+  workInProgressHook = null; // 函数执行完了，所有指向hooks链表的临时变量，设置null
 
   if (__DEV__) {
     currentHookNameInDev = null;
@@ -661,6 +667,7 @@ export function resetHooksAfterThrow(): void {
 }
 
 function mountWorkInProgressHook(): Hook {
+  // 创建一个hook节点
   const hook: Hook = {
     memoizedState: null,
 
@@ -673,11 +680,15 @@ function mountWorkInProgressHook(): Hook {
 
   if (workInProgressHook === null) {
     // This is the first hook in the list
+    // 若这是链表的第一个hook节点，则使用 currentlyRenderingFiber.memoizedState 指针指向到该hook
+    // currentlyRenderingFiber 是在 renderWithHooks() 中赋值的，是当前函数组件对应的fiber节点
     currentlyRenderingFiber.memoizedState = workInProgressHook = hook;
   } else {
     // Append to the end of the list
+    // 若这不是链表的第一个节点，则放到列表的最后即可
     workInProgressHook = workInProgressHook.next = hook;
   }
+  // 返回这个hook节点
   return workInProgressHook;
 }
 
@@ -687,23 +698,46 @@ function updateWorkInProgressHook(): Hook {
   // clone, or a work-in-progress hook from a previous render pass that we can
   // use as a base. When we reach the end of the base list, we must switch to
   // the dispatcher used for mounts.
+  // 机翻：此函数用于更新和由渲染阶段更新触发的重新渲染。它假设有一个可以克隆的当前钩子，
+  // 或者一个可以用作基础的上一个渲染过程中的正在进行的钩子。当我们到达基本列表的末尾时，
+  // 我们必须切换到用于装载的调度程序。
+  let nextCurrentHook: null | Hook;
+
   /**
-   * 获取下一个需要执行的hook
+   * 获取current树的下一个需要执行的hook
    * 1. 若当前没有正在执行的hook；
    * 2. 若当前有执行的hook，则获取其下一个hook即可；
    */
-  let nextCurrentHook: null | Hook;
   if (currentHook === null) {
-    const current = currentlyRenderingFiber.alternate;
+    const current = currentlyRenderingFiber.alternate; // workInProgress对应的current节点
     if (current !== null) {
+      /**
+       * 若current节点不为空，则从current获取到hooks的链表
+       * 注：hooks链表存储在memoizedState属性中
+       */
       nextCurrentHook = current.memoizedState;
     } else {
       nextCurrentHook = null;
     }
   } else {
+    /**
+     * 因为当前的 updateWorkInProgressHook() 会多次执行，当第一次执行时，就已经获取到了hooks的头指针，
+     * 这里只需要通过next指针就可以获取到下一个hook节点
+     */
     nextCurrentHook = currentHook.next;
   }
 
+  /**
+   * 获取 workInProgress 树的下一个hook节点
+   * 在执行 updateWorkInProgressHook() 之前，在renderWithHooks里，已经提前设置 workInProgress.memoizedState 为null，
+   * 而 currentlyRenderingFiber 与 workInProgress 指向的是同一个对象，则意味着
+   * currentlyRenderingFiber.memoizedState 也是为null。
+   * 每次update时，还没开始执行第一个hook前，currentlyRenderingFiber.memoizedState都为null，
+   * 同时 workInProgressHook 也为null，毕竟当前还没有正在执行的hook，但若已经执行过一个hook后，
+   * 则会从 workInProgressHook.next 获取下一个hook，在正常的交互中，无论是从 currentlyRenderingFiber.memoizedState 中
+   * 获取下一个hook，还是从 workInProgressHook.next 获取下一个hook，nextWorkInProgressHook都会为null，
+   * 目前暂时不知道 nextWorkInProgressHook 不为null有哪些情况？比如在执行hook的过程中，又产生了新的更新，然后就重新执行所有的hook？
+   */
   let nextWorkInProgressHook: null | Hook;
   if (workInProgressHook === null) {
     nextWorkInProgressHook = currentlyRenderingFiber.memoizedState;
@@ -713,18 +747,21 @@ function updateWorkInProgressHook(): Hook {
 
   if (nextWorkInProgressHook !== null) {
     // There's already a work-in-progress. Reuse it.
+    /**
+     * 若下一个hook节点不为空，则将 workInProgressHook 指向到该节点
+     */
     workInProgressHook = nextWorkInProgressHook;
     nextWorkInProgressHook = workInProgressHook.next;
 
-    currentHook = nextCurrentHook;
+    currentHook = nextCurrentHook; // currentHook指针同步向下移动
   } else {
     // Clone from the current hook.
-
+    // https://github.com/wenzi0github/react/issues/1
     if (nextCurrentHook === null) {
       throw new Error('Rendered more hooks than during the previous render.');
     }
 
-    currentHook = nextCurrentHook;
+    currentHook = nextCurrentHook; // currentHook指针向下一个移动
 
     const newHook: Hook = {
       memoizedState: currentHook.memoizedState,
@@ -796,14 +833,20 @@ function updateReducer<S, I, A>(
 ): [S, Dispatch<A>] {
   /**
    * 几个问题还没明白：
-   * 1. updateWorkInProgressHook()方法是如何得到当前执行的hook的？
+   * 1. updateWorkInProgressHook() 方法是如何得到当前执行的hook的？
    * 2. currentHook这个全局变量在哪儿控制的？currentHook和hook是同一个吗？
+   * 
+   * 呐，现在就知道了！
+   * 1. updateWorkInProgressHook() 就从fiber.memoizedState中获取当前指针对应的hook，每执行一次该方法，就获取下一个节点的hook，
+   *  虽然每个hook里都有这个执行这个方法，但执行hook的顺序和链表中的顺序是一样的，因此得到的都自己上次存储的那个hook；
+   * 2. currentHook 就是在 updateWorkInProgressHook() 中赋值的，hook是workInProgress树的fiber节点的那个hook，currentHook是
+   *  current树的fiber节点的那个hook，即该hook上次渲染时的那个状态的hook，可用于前后两次的对比
    * @type {Hook}
    */
   const hook = updateWorkInProgressHook();
   const queue = hook.queue;
 
-  console.log('updateReducer', hook, queue);
+  console.log('updateReducer', hook, queue, reducer);
 
   if (queue === null) {
     throw new Error(
@@ -1665,6 +1708,12 @@ function pushEffect(tag, create, destroy, deps) {
   let componentUpdateQueue: null | FunctionComponentUpdateQueue = (currentlyRenderingFiber.updateQueue: any);
   if (componentUpdateQueue === null) {
     // 若updateQueue为空，则创建
+    /**
+     * componentUpdateQueue = {
+          lastEffect: null,
+          stores: null,
+        };
+     */
     componentUpdateQueue = createFunctionComponentUpdateQueue();
     currentlyRenderingFiber.updateQueue = (componentUpdateQueue: any);
 
@@ -1815,10 +1864,10 @@ function updateEffectImpl(fiberFlags, hookFlags, create, deps): void {
   let destroy = undefined;
 
   if (currentHook !== null) {
-    const prevEffect = currentHook.memoizedState; // 当前正在使用的hook
-    destroy = prevEffect.destroy; //
+    const prevEffect = currentHook.memoizedState; // 上次渲染时使用的hook
+    destroy = prevEffect.destroy;
     if (nextDeps !== null) {
-      const prevDeps = prevEffect.deps;
+      const prevDeps = prevEffect.deps; // 上次渲染时的依赖项
 
       // 判断依赖项是否发生变化
       if (areHookInputsEqual(nextDeps, prevDeps)) {
