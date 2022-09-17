@@ -10,6 +10,8 @@
 2. 忽略各种任务的优先级的调度；
 3. React 中各个节点的类型很多，如函数组件、类组件、html 节点、Suspense 类型的组件、使用 lazy()方法的动态组件等等，不过我们这里主要讲解下函数组件、类组件、html 节点这 3 个；
 
+`render()`方法是我们整个应用的入口，我们就从这里开始。我们在之前的文章[React18 源码解析之 render()入口方法](https://www.xiabingbao.com/post/react/react-render-rfl28t.html)中，只是讲解了 render()方法的挂载方式。这里我们会深入了解到从 jsx 转为 fiber 的整个过程。
+
 ## 1. 起始
 
 在开始讲解前，我们先定义下要渲染的 React 组件，方便我们后续的理解：
@@ -45,11 +47,11 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);
 ```
 
-我们编写这个结构主要是为了看下，嵌套的、并列的标签，流程是如何流转的，中间经过多个复杂的过程，才将 element 转为 fiber 节点。
+我们编写这个结构主要是为了看下，嵌套的、并列的标签，流程是如何流转的，中间经历了多少个复杂的过程，才将 element 转为 fiber 节点。
 
 ## 2. 初始的 element 如何处理？
 
-我是强烈建议使用[debug-react](https://github.com/wenzi0github/debug-react)项目来进行调试的，因为里面的分支和各种变量很多，单纯地只是看，很容易懵！
+我是强烈建议使用[debug-react](https://github.com/wenzi0github/debug-react)项目来进行调试的，因为里面的分支和各种变量很多，若只是单纯地硬看，很容易懵，不知道这些变量具体是什么值！那么运行起一个 React 项目后，可以在某些关键节点、变量，打断点输出，就方便很多。
 
 render()传入的 element 和后续的 element 的操作是不一样的。其他的 element 都可以通过执行函数组件或者类组件的实例来得到，而初始的 element 是直接提供的。
 
@@ -61,7 +63,7 @@ console.log(<App />);
 
 ![App组件的element结构](https://mat1.gtimg.com/qqcdn/tupload/1659948275754.png)
 
-可以看到，element 结构并不是把 React 所有的 jsx 都组织起来，形成巨大的嵌套结构。若当前是函数组件、类组件等，内部的 jsx 可以通过执行属性 type 对应的函数或类的实例来得到。
+可以看到，element 结构并不是把 React 所有的 jsx 都组织起来，形成巨大的嵌套结构，他只是当前某个节点里的 jsx 结构。若当前是函数组件、类组件等，内部的 jsx 可以通过执行属性 type 对应的函数或类的实例来得到，然后继续递归下去，最终把所有的 jsx 都全部解析出来。
 
 入口函数 render() 传入的参数，就是上面`<App />`的 element 结构。内部通过属性`_internalRoot`得到整个应用的根节点 root，然后又调用了 updateContainer()：
 
@@ -116,7 +118,7 @@ export function updateContainer(
   update.payload = { element };
 
   // 处理 callback，这个 callback 其实就是我们调用 ReactDOM.render 时传入的 callback
-  // 不过从React18开始，render不再传入callback了，即下面的if就不会再执行了
+  // 不过从React18开始，render不再传入callback了，即这里的if就不会再执行了
   callback = callback === undefined ? null : callback;
   if (callback !== null) {
     update.callback = callback;
@@ -295,6 +297,37 @@ function performUnitOfWork(unitOfWork: Fiber): void {
 
 以我们上面的写的 React 组件为例，workInProgress 指向是的树的根节点，这个根节点没有具体的 jsx 结构。
 
+```jsx
+const FuncComponent = () => {
+  return (
+    <p>
+      <span>this is function component</span>
+    </p>
+  );
+};
+
+class ClassComponent extends React.Component {
+  render() {
+    return <p>this is class component</p>;
+  }
+}
+
+function App() {
+  return (
+    <div className="App">
+      <FuncComponent />
+      <ClassComponent />
+      <div>
+        <span>123</span>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+```
+
 1. 第一次执行后函数 beginWork() 后，得到 workInProgress 子元素里 element 结构转换出来的 fiber 节点，就是 `<App />` 对应的 fiber 节点，然后给到变量 next；workInProgress 再移动这个 fiber 节点上；
 2. 继续执行函数 beginWork()，得到`<App />`子元素的 fiber 节点，即 div 标签对应的 fiber 节点；
 3. 继续执行函数 beginWork()，得到 div 标签子元素的 fiber 节点，若子元素是一个数组，beginWork() 会把所有的子元素都转为 fiber 节点，并形成单向链表，然后返回这个链表的头指针。这里，div 标签里有 3 个并列的元素，即`<FuncComponent />`, `<ClassComponent>`和 div 标签，beginWork()会节点的不同类型，创建出不同的 fiber 节点，然后形成链表，再回到这个链表的第 1 个节点；即 workInProgress 指向了`<FuncComponent />`生成的 fiber 节点；
@@ -340,6 +373,8 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
 通过这张图，我们可以更加直观地理解[整个流转流程](https://docs.qq.com/flowchart/DS3lvUGZqRkFxZU9J?u=d34e6db0943f45ed8747cdd1927e98b2)：
 
 ![fiber构建的流程](https://mat1.gtimg.com/qqcdn/tupload/1659946723697.png)
+
+图中的数字，就是 workInProgress 指针行进的顺序。
 
 1. 当有子节点时，就一直往下构建其子节点；若子节点有多个，则一并都构建出来；
 2. 若没有子节点，则优先查询是否有兄弟节点，若有，则流转到兄弟节点（如图中的 5 和 8），回到 1；
