@@ -8,9 +8,11 @@ beginWork() 源码位置：[packages/react-reconciler/src/ReactFiberBeginWork.ol
 
 ## 1. 基本操作
 
-beginWork()函数根据不同的节点类型（如函数组件、类组件、html 标签、树的根节点等），调用不同的函数来处理，将该 fiber 节点中带有的 element 结构解析成 fiber 节点。我们第一次调用时，unitOfWork（即 workInProgress）最初指向的就是树的根节点，这个根节点的类型`tag`是：HostRoot。
+不同类型的组件，转换成 fiber 节点的过程是不一样的。比如普通的 jsx 结构（即 html 标签类型的）需要通过递归一步步创建；而函数组件类型的，则需要执行该函数，才能得到内部的 jsx 结构，然后再递归转换；类组件类型的，则需要初始化出一个实例，然后调用其内部的 render()方法，才能得到相应的 jsx 结构。
 
-根据不同的 fiber 节点属性，携带的不同的 element 结构，处理方式也是不一样的。
+beginWork()函数就是根据不同的节点类型（如函数组件、类组件、html 标签、树的根节点等），调用不同的函数，来得到下一个将要处理的 jsx 结构（即 element），然后再将得到的 element 结构解析成 fiber 节点。后续再通过这个新的 fiber 节点，递归后续的 jsx，直到全部遍历完。
+
+我们第一次调用时，unitOfWork（即 workInProgress）最初指向的就是树的根节点，这个根节点的类型`tag`是：HostRoot。以下不同的 fiber 节点属性，会调用不同的方式来得到将要处理的 jsx：
 
 1. HostRoot 类型的，即树的根节点类型的，会把 workInProgress.updateQueue.shared.pending 对应的环形链表中 element 结构，放到 workInProgress.updateQueue.firstBaseUpdate 里，等待后续的执行；
 2. FunctionComponent 类型，即函数组件的，会执行这个函数，返回的结果就是 element 结构；
@@ -102,11 +104,13 @@ export function cloneUpdateQueue<State>(current: Fiber, workInProgress: Fiber): 
 
 在 React 中很多地方都是这样，这是用到了 js 中的 [对象引用](https://segmentfault.com/a/1190000014724227) 的特性，即对于数组和 object 类型这两种数据结构而言，当多个变量指向同一个地址时，改变其中变量的值，其他变量的值也会同步更新。
 
+因此，在 cloneUpdateQueue() 修改了 workInProgress 的 updateQueue 属性，其实也相应地修改了外部的 fiber 节点。
+
 #### 3.1.2 processUpdateQueue
 
 函数 processUpdateQueue() 相对来说，功能复杂一些。功能主要是操作 workInProgress 中的 updateQueue 属性，将其中将要进行的更新队列拿出来，串联执行，得到最终的一个结果。
 
-在初始 render()阶段，workInProgress.updateQueue.shared.pending 中只有一个 update 节点，这个节点中存放着一个 element 结构，通过一通的运算后，就可以得到这个 element 结构，然后将其放到了 workInProgress.updateQueue.baseState 中。
+在初始 render()阶段，workInProgress.updateQueue.shared.pending 中只有一个 update 节点，这个节点中存放着一个 element 结构，通过一系列的运算后，就可以得到这个 element 结构，然后将其放到了 workInProgress.updateQueue.baseState 中。
 
 源码比较长，可以直接 [点击链接](https://github.com/wenzi0github/react/blob/55a685a8db632780436b52c5ebc6d968644a8eca/packages/react-reconciler/src/ReactUpdateQueue.old.js#L519) 去 GitHub 上查看。
 
@@ -139,7 +143,7 @@ reconcileChildren(current, workInProgress, nextChildren, renderLanes);
 const Component = workInProgress.type; // 函数组件时，type即该函数，可以直接执行type()
 ```
 
-函数组件的主体就放在属性 type 中，后续执行该 type 字段即可。
+函数组件的主体就放在属性 type 中，后续执行该 type() 即可。
 
 #### 3.2.1 updateFunctionComponent
 
@@ -171,7 +175,7 @@ function updateFunctionComponent(current, workInProgress, Component, nextProps: 
 
 可以看到该方法的最后，也是调用了函数 reconcileChildren()。
 
-这里最主要的是 nextChildren 怎么得到的？
+这里的 nextChildren 是通过执行 renderWithHooks() 函数得到的。通过函数名字也可以看出来，在执行函数组件时，需要考虑 hooks 的挂载和执行。不过本篇文章里，我们仅考虑如何获取到函数组件中的 jsx 结构，暂不考虑 hooks 相关的特性。
 
 ```javascript
 nextChildren = renderWithHooks(current, workInProgress, Component, nextProps, context, renderLanes);
@@ -210,15 +214,42 @@ export function renderWithHooks<Props, SecondArg>(
 
 核心的操作就是`children = Component(props, secondArg)`，通过执行该函数，得到内部的 element 结构，即 children，然后返回到 updateFunctionComponent()，再传递给 reconcileChildren() 进行处理。
 
-若只是了解 element 转为 fiber 的过程，上面的精简版已经够用了。若想了解 renderWithHooks() 具体都做了些什么，可以跳转去：[React18 源码解析之 hooks 的挂载](https://www.xiabingbao.com)。
+目前只是了解了 element 转为 fiber 的过程，上面的精简版已经够用了。若想了解 hooks 是如何挂载和执行的，可以跳转去：[React18 源码解析之 hooks 的挂载](https://www.xiabingbao.com)。
 
 ### 3.3 ClassComponent
 
 当节点类型为 ClassComponent 时，会进入到这个分支中，然后执行函数 updateClassComponent()。
 
-现在函数组件是 React 的趋势，我们不会深入类组件的各个环节。
+不过现在函数组件是 React 的趋势，我们不会太深入类组件的各个环节。
 
 workInProgress 对应的是类组件时，workInProgress.stateNode 中应当存储的是该类组件的实例。在初始 render()阶段，workInProgress.stateNode 为空，需要调用函数 constructClassInstance() 来创建实例。
+
+我们先熟悉下类组件的编写：
+
+```javascript
+class App extends React.Component {
+  state = {
+    count: 0,
+  };
+
+  handleClick() {
+    this.setState({ count: this.state.count + 1 });
+  }
+
+  render() {
+    return (
+      <div className="App">
+        <p>{this.state.count}</p>
+        <p>
+          <button onClick={this.handleClick.bind(this)}>click me</button>
+        </p>
+      </div>
+    );
+  }
+}
+```
+
+若要渲染该组件，则需要初始化该类的实例，然后调用 render()方法才可以。
 
 #### 3.3.1 constructClassInstance
 
@@ -233,7 +264,7 @@ workInProgress 对应的是类组件时，workInProgress.stateNode 中应当存�
  * @returns {*} instance 实例
  */
 function constructClassInstance(workInProgress: Fiber, ctor: any, props: any): any {
-  // 初始化出类的实例
+  // 初始化出类的实例，源码这里ctor用了全部小写的方式，不过感觉用Ctor这种可能会更好一些
   let instance = new ctor(props, context);
 
   // 获取到类组件中的state，放到workInProgress中的memoizedState字段中
@@ -356,10 +387,10 @@ function finishClassComponent(
 ) {
   const instance = workInProgress.stateNode; // 类组件的实例
 
-  // 类组件，就调用render()方法获取jsx对应的element结构
+  // 类组件，就调用 render() 方法获取 jsx 对应的 element 结构
   nextChildren = instance.render();
 
-  // 获取到element结构后，调用函数 reconcileChildren() 将其转为 workInProgress.child
+  // 获取到 element 结构后，调用函数 reconcileChildren() 将其转为 workInProgress.child
   reconcileChildren(current, workInProgress, nextChildren, renderLanes);
 
   // Memoize state using the values we just used to render.
@@ -392,6 +423,7 @@ function updateHostComponent(current: Fiber | null, workInProgress: Fiber, rende
   const prevProps = current !== null ? current.memoizedProps : null;
 
   let nextChildren = nextProps.children;
+
   // 判断接下来是否要设置文本了，不过没看懂，若接下来是文本节点，为什么要把 nextChildren 设置为null？
   // 而且在接下来的 updateHostText() 中，什么也没干
   const isDirectTextChild = shouldSetTextContent(type, nextProps);
@@ -425,10 +457,10 @@ function updateHostComponent(current: Fiber | null, workInProgress: Fiber, rende
 
 有同学在 `FunctionComponent` 中打点时，发现第一次渲染时，各种函数组件并没有进入到那个逻辑里。其实函数类型的组件都进入到 `IndeterminateComponent` 的类型中了，即不确定类型的组件。
 
-为什么用 function 编写的组件，还是"不确定类型"呢？如以下的几种方式：
+为什么用 function 编写的组件，还是"不确定类型"呢？比如以下的几种方式：
 
 ```javascript
-// function中return 带有 render() 的obj
+// function中 return 带有 render() 的obj
 function App() {
   return {
     render() {
@@ -498,8 +530,8 @@ function mountIndeterminateComponent(
 }
 ```
 
-判断执行该函数后的结果 value 是什么类型，若 value 是 Object 类型，且有 render()方法，且没有 \$\$typeof，表示 value 肯定不是 element 结构，而有 render()方法的对象，则我们认为当前的 workInProgress 是类组件；否则 value 是 element 结构，则认为 workInProgres 是函数组件。
+判断执行该函数后的结果 value 是什么类型，若 value 是 Object 类型，且有 render()方法，且没有 `$$typeof` 属性，表示 value 肯定不是 element 结构，而有 render()方法的对象，则我们认为当前的 workInProgress 是类组件；否则 value 是 element 结构，则认为 workInProgres 是函数组件。
 
 ## 4. 总结
 
-我们主要学习了函数 beginWork() 的功能，是根据当前 fiber 的类型，用不同的方法获取到下一个应当构建为 fiber 节点的 element。这里只讲解了几个常见的 fiber 类型是如何处理的，其他的若有涉及到或者想了解的，后续也可以进行补充。
+我们主要学习了函数 beginWork() 的功能，根据当前 fiber 的类型，用不同的方法获取到下一个应当构建为 fiber 节点的 element。稍后我们会讲解如何把 jsx 转为 fiber 节点。
