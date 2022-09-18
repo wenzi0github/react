@@ -114,7 +114,7 @@ export function cloneUpdateQueue<State>(current: Fiber, workInProgress: Fiber): 
 
 源码比较长，可以直接 [点击链接](https://github.com/wenzi0github/react/blob/55a685a8db632780436b52c5ebc6d968644a8eca/packages/react-reconciler/src/ReactUpdateQueue.old.js#L519) 去 GitHub 上查看。
 
-关于 processUpdateQueue() 函数的详细解读，可以参考这篇文章[React18 源码解析之 processUpdateQueue 的执行](https://www.xiabingbao.com)。我们这里就不展开了。这里要知道的是执行该方法后，初始的 element 结构，已经存放在了 workInProgress.memoizedState 中了。
+关于 processUpdateQueue() 函数的详细解读，可以参考这篇文章[React18 源码解析之 processUpdateQueue 的执行](https://www.xiabingbao.com/post/react/react-process-update-queue-riewir.html)。我们这里就不展开了。这里要知道的是执行该方法后，初始的 element 结构，已经存放在了 workInProgress.memoizedState 中了。
 
 ```javascript
 const nextState: RootState = workInProgress.memoizedState;

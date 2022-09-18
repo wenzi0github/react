@@ -8,7 +8,7 @@ fiber 节点上可能会存在一些在本次调度时需要执行的任务，�
 2. 如何将当前任务和上次的任务进行拼接？
 3. 如何筛查出当前调度中优先级低的任务？
 
-这些操作全都是函数 processUpdateQueue() 完成的，源码的位置：[packages/react-reconciler/src/ReactUpdateQueue.old.js](https://github.com/wenzi0github/react/blob/d7c33be1d8edeac249a9191061f7badcd43d4c8a/packages/react-reconciler/src/ReactUpdateQueue.old.js#L524)。我们在之前的 [React18 源码解析之 beginWork 的操作](https://www.xiabingbao.com) 中稍微涉及到了点 processUpdateQueue() 的内容，但并没有展开讲解，这里我们详细说明下。
+这些操作全都是函数 processUpdateQueue() 完成的，源码的位置：[packages/react-reconciler/src/ReactUpdateQueue.old.js](https://github.com/wenzi0github/react/blob/d7c33be1d8edeac249a9191061f7badcd43d4c8a/packages/react-reconciler/src/ReactUpdateQueue.old.js#L524)。我们在之前的 [React18 源码解析之 beginWork 的操作](https://www.xiabingbao.com/post/react/react-beginwork-riew9h.html) 中稍微涉及到了点 processUpdateQueue() 的内容，但并没有展开讲解，这里我们详细说明下。
 
 ## 1. 几个属性的含义
 
@@ -132,7 +132,6 @@ export function enqueueUpdate<State>(fiber: Fiber, update: Update<State>, lane: 
        * pending.next = update：即最后一个节点pending的next指针指向到了update节点，
        * 这样update就进入到链表中了，此时update是链表的最后一个节点了，
        * 然后下面的 sharedQueue.pending 再指向到租后一个 update 节点
-       * 示意图：https://pic2.zhimg.com/80/v2-bbb9813e8e4922b05d77261fe7814e95_1440w.jpg
        */
       update.next = pending.next;
       pending.next = update;
@@ -144,7 +143,7 @@ export function enqueueUpdate<State>(fiber: Fiber, update: Update<State>, lane: 
 
 在插入节点维护一个环形链表时，上操作可能比较绕，需要多理解理解。
 
-![React中shared.pending的环形链表](https://pic2.zhimg.com/80/v2-bbb9813e8e4922b05d77261fe7814e95_1440w.jpg)
+![React中shared.pending的环形链表](https://www.xiabingbao.com/upload/865263273997f2546.jpeg)
 
 ## 4. processUpdateQueue
 
@@ -453,7 +452,7 @@ export function processUpdateQueue<State>(workInProgress: Fiber, props: any, ins
 }
 ```
 
-我们再总结下函数 processUpdateQueue() 里的操作：
+我们再总结梳理下函数 processUpdateQueue() 里的操作：
 
 1. 将当前将要进行的更新 shared.pending 的环形链表，拆开拼接到到 lastBaseUpdate 的后面；
 2. 执行 firstBaseUpdate 链表的操作时，若当前 update 对应的任务的优先级符合要求，则执行；若优先级较低，则存储执行到当前节点的状态，做为下次渲染时的初始值，和接下来所有的 update 节点；
