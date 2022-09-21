@@ -1695,6 +1695,14 @@ function rerenderState<S>(
   return rerenderReducer(basicStateReducer, (initialState: any));
 }
 
+/**
+ * 
+ * @param {*} tag 
+ * @param {*} create useEffect()中的callback
+ * @param {*} destroy mount时为undefined
+ * @param {*} deps 依赖项
+ * @returns 
+ */
 function pushEffect(tag, create, destroy, deps) {
   // 新创建一个effect的hook
   const effect: Effect = {
@@ -1835,12 +1843,12 @@ function updateRef<T>(initialValue: T): {|current: T|} {
  * 创建一个effect的hook
  * @param fiberFlags fiber的优先级
  * @param hookFlags hook的优先级
- * @param create effect要执行的函数
- * @param deps 依赖项，是个数组
+ * @param create effect要执行的回调函数
+ * @param deps 依赖项，可以为 null 或者数组
  */
 function mountEffectImpl(fiberFlags, hookFlags, create, deps): void {
-  const hook = mountWorkInProgressHook();
-  const nextDeps = deps === undefined ? null : deps;
+  const hook = mountWorkInProgressHook(); // 在链表中创建一个hook节点，用来进行挂载
+  const nextDeps = deps === undefined ? null : deps; // 依赖项
   currentlyRenderingFiber.flags |= fiberFlags;
   hook.memoizedState = pushEffect(
     HookHasEffect | hookFlags,
