@@ -2,7 +2,7 @@
 
 > 我们解析的源码是 React18.1.0 版本，请注意版本号。React 源码学习的 GitHub 仓库地址：[https://github.com/wenzi0github/react](https://github.com/wenzi0github/react)。
 
-在阅读过 [React18 源码解析之 diff 对比的过程](https://www.xiabingbao.com) 文章后，我们就会知道，属性 key 相当于某元素的唯一标识，当组件中产生需要 diff 对比元素时，首先要对比的就是属性 key。
+在阅读过 [React18 源码解析之 reconcileChildren 生成 fiber 的过程](https://www.xiabingbao.com/post/react/reconcile-children-fiber-riezuz.html) 文章后，我们就会知道，属性 key 相当于某元素的唯一标识，当组件中产生需要 diff 对比元素时，首先要对比的就是属性 key。
 
 React 中并不知道哪个节点产生了修改、新增或者其他变动，都是 key 和 type 来对比前后两个节点才会知道。 当 key 不一样时（如相同索引的位置，current 的 key 是 abc，而 element 中的 key 是 def），或者找不到相应的 key（如 element 中的 key 是 def，但原 current 树中没有该 key），都会把之前的 fiber 节点删除掉，重新创建新的 fiber 节点。
 

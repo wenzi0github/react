@@ -1,4 +1,4 @@
-# useEffect与setTimeout之间的问题
+# useEffect 与 定时器之间的问题
 
 如：
 
@@ -8,8 +8,9 @@ const App = () => {
 
   useEffect(() => {
     setCount(count + 1);
+    console.log(count);
     setTimeout(() => {
-      console.log('count', count); // 请问这里输出的是几
+      console.log("count", count); // 请问这里输出的是几
     }, 500);
   }, []);
 
@@ -18,3 +19,21 @@ const App = () => {
 ```
 
 这里跟闭包有关系
+
+```javascript
+const App = () => {
+  const [count, setCount] = useState(0);
+
+  console.log("count", count);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCount(count + 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  return null;
+};
+```

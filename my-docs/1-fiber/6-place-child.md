@@ -6,7 +6,7 @@
 
 此方法是一种顺序优化手段，lastPlacedIndex 一直在更新，初始为 0，表示访问过的节点在旧集合中最右的位置（即最大的位置）。如果新集合中当前访问的节点比 lastPlacedIndex 大，说明当前访问节点在旧集合中就比上一个节点位置靠后，则该节点不会影响其他节点的位置，因此不用添加到差异队列中，即不执行移动操作。只有当访问的节点比 lastPlacedIndex 小时，才需要进行移动操作。
 
-lastPlaceIndex 初始时为 0，表示当前复用到的旧 fiber 的最大索引。比如第一个新 fiber 节点复用的是最后一个旧 fiber 节点，那 lastPlaceIndex 就是最后那个旧 fiber 节点的索引值。
+lastPlaceIndex 表示当前复用到的旧 fiber 的最大索引，初始时为 0。比如第一个新 fiber 节点复用的是最后一个旧 fiber 节点，那 lastPlaceIndex 就是最后那个旧 fiber 节点的索引值。
 
 ## 1. 样例 1
 
@@ -16,7 +16,7 @@ return !flag
   : [<li key="1">0</li>, <li key="2">2</li>, <li key="0">2</li>];
 ```
 
-![](https://pic4.zhimg.com/80/v2-c0df110682cad8be80cb028154ee3743_1440w.jpg)
+![](https://www.xiabingbao.com/upload/14636327c1c59fc1f.jpeg)
 
 过程描述：
 
@@ -29,11 +29,21 @@ return !flag
 
 ```javascript
 return !flag
-  ? [<li key="0">0</li>, <li key="1">1</li>, <li key="2">2</li>, <li key="3">2</li>]
-  : [<li key="1">1</li>, <li key="0">0</li>, <li key="3">3</li>, <li key="2">2</li>];
+  ? [
+      <li key="0">0</li>,
+      <li key="1">1</li>,
+      <li key="2">2</li>,
+      <li key="3">2</li>
+    ]
+  : [
+      <li key="1">1</li>,
+      <li key="0">0</li>,
+      <li key="3">3</li>,
+      <li key="2">2</li>
+    ];
 ```
 
-![](https://pic3.zhimg.com/80/v2-cda1968d414cdf3e6cc2ae7abe3206b6_1440w.jpg)
+![](https://www.xiabingbao.com/upload/77486327c1e2d4e8c.jpeg)
 
 过程描述：
 
@@ -47,11 +57,21 @@ return !flag
 
 ```javascript
 return !flag
-  ? [<li key="0">0</li>, <li key="1">1</li>, <li key="2">2</li>, <li key="3">2</li>]
-  : [<li key="1">1</li>, <li key="5">5</li>, <li key="3">3</li>, <li key="0">0</li>];
+  ? [
+      <li key="0">0</li>,
+      <li key="1">1</li>,
+      <li key="2">2</li>,
+      <li key="3">2</li>
+    ]
+  : [
+      <li key="1">1</li>,
+      <li key="5">5</li>,
+      <li key="3">3</li>,
+      <li key="0">0</li>
+    ];
 ```
 
-![](https://pic3.zhimg.com/80/v2-e83852cc0f30ec83fd4796a8fcdabee2_1440w.jpg)
+![](https://www.xiabingbao.com/upload/27146327c1fcc7c1d.jpeg)
 
 过程描述：
 
@@ -70,7 +90,7 @@ return !flag
   : [<li key="2">2</li>, <li key="0">0</li>, <li key="1">1</li>];
 ```
 
-![](https://pic2.zhimg.com/80/v2-0c7c43851b4c0faee3c90d75a7e8117d_1440w.jpg)
+![](https://www.xiabingbao.com/upload/87196327c2175241e.jpeg)
 
 过程同上，但是这种操作会使得顺序优化算法失去效果，除了最后一个节点没有 effect，其他节点都会被执行插入操作，所以尽量避免将最后一个节点更新到第一个节点的位置操作。
 
