@@ -509,13 +509,20 @@ function commitBeforeMutationEffectsDeletion(deletion: Fiber) {
   }
 }
 
+/**
+ * 执行 useEffect() 上次的 destory，即 useEffect() 的卸载方法是在下次渲染力执行的，
+ * 换句话说，执行当前渲染时，先执行上次的卸载方法，然后再执行当前的方法
+ * @param {*} flags 
+ * @param {*} finishedWork 
+ * @param {*} nearestMountedAncestor 
+ */
 function commitHookEffectListUnmount(
   flags: HookFlags,
   finishedWork: Fiber,
   nearestMountedAncestor: Fiber | null,
 ) {
   const updateQueue: FunctionComponentUpdateQueue | null = (finishedWork.updateQueue: any);
-  const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;
+  const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null; // 获取最后一个指针
   if (lastEffect !== null) {
     const firstEffect = lastEffect.next;
     let effect = firstEffect;
@@ -538,6 +545,7 @@ function commitHookEffectListUnmount(
               setIsRunningInsertionEffect(true);
             }
           }
+          // execute destroy()
           safelyCallDestroy(finishedWork, nearestMountedAncestor, destroy);
           if (__DEV__) {
             if ((flags & HookInsertion) !== NoHookEffect) {
@@ -559,6 +567,12 @@ function commitHookEffectListUnmount(
   }
 }
 
+/**
+ * 执行 useEffect()
+ * https://www.zhihu.com/question/357020049/answer/2686600340
+ * @param {*} flags 
+ * @param {*} finishedWork 
+ */
 function commitHookEffectListMount(flags: HookFlags, finishedWork: Fiber) {
   const updateQueue: FunctionComponentUpdateQueue | null = (finishedWork.updateQueue: any);
   const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;

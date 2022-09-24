@@ -1863,8 +1863,8 @@ function mountEffectImpl(fiberFlags, hookFlags, create, deps): void {
  * 更新effect里的函数
  * @param fiberFlags
  * @param hookFlags
- * @param create
- * @param deps
+ * @param create 回调函数
+ * @param deps 依赖项
  */
 function updateEffectImpl(fiberFlags, hookFlags, create, deps): void {
   const hook = updateWorkInProgressHook(); // 获取当前的hook
@@ -1893,6 +1893,7 @@ function updateEffectImpl(fiberFlags, hookFlags, create, deps): void {
    * 无论deps是否有变化，最终都会执行到pushEffect()
    * 只是hookFlags和destroy不一样
    * 若需要执行时，则将destroy=undefined传给pushEffect
+   * 若之前没有hook，则无需执行上次的销毁操作
    * @type {Effect}
    */
   hook.memoizedState = pushEffect(
