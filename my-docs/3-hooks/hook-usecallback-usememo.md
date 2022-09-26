@@ -1,16 +1,16 @@
-# useCallback和useMemo的执行流程
+# useCallback 和 useMemo 的执行流程
 
-useCallback和useMemo的流程相对来说比较简单，他只是根据依赖项存储数据，但并不会直接导致React组件的刷新。
+useCallback 和 useMemo 的流程相对来说比较简单，他只是根据依赖项存储数据，但并不会直接导致 React 组件的刷新。
 
-同理，useCallback和useMemo两个hook也分成了mount和update两个阶段。
+同理，useCallback 和 useMemo 两个 hook 也分成了 mount 和 update 两个阶段。
 
 ## useCallback
 
-useCallback的作用，主要是为了缓存方法，避免重新声明，而且还可以根据依赖项重新进行定义。
+useCallback 的作用，主要是为了缓存方法，避免重新声明，而且还可以根据依赖项重新进行定义。
 
 ### mountCallback
 
-初始化时很简单，就是把传入的callback和依赖项deps存储起来。
+初始化时很简单，就是把传入的 callback 和依赖项 deps 存储起来。
 
 ```javascript
 /**
@@ -29,7 +29,7 @@ function mountCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
 
 ### updateCallback
 
-当React组件重新渲染时，即执行updateCallback。内部会对前后两次的依赖项进行判断，若依赖项没有变化，则返回之前存储的callback；若没有依赖项，或者依赖项发生了变化，则缓存新的callback，并返回该callback。
+当 React 组件重新渲染时，即执行 updateCallback。内部会对前后两次的依赖项进行判断，若依赖项没有变化，则返回之前存储的 callback；若没有依赖项，或者依赖项发生了变化，则缓存新的 callback，并返回该 callback。
 
 ```javascript
 /**
@@ -57,17 +57,17 @@ function updateCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
 }
 ```
 
-areHookInputsEqual()方法是用来比较两个数组中的每一项是否相等，我们稍后会单独进行讲解，不过其实也不难，每一项都是用`Object.is`来检测，只要有一项不相等，则返回false；最终全部都一样，就返回true。
+areHookInputsEqual()方法是用来比较两个数组中的每一项是否相等，我们稍后会单独进行讲解，不过其实也不难，每一项都是用`Object.is`来检测，只要有一项不相等，则返回 false；最终全部都一样，就返回 true。
 
 ## useMemo
 
-useMemo是用来根据依赖项缓存callback计算出的结果，若依赖项没有变化，则一直使用之前计算出来的结果，否则重新进行计算并重新缓存。
+useMemo 是用来根据依赖项缓存 callback 计算出的结果，若依赖项没有变化，则一直使用之前计算出来的结果，否则重新进行计算并重新缓存。
 
-useMemo跟useCallback的构成和执行和相似，只不过useMemo会执行传入的callback()，存储的是该callback()执行后的结果。
+useMemo 跟 useCallback 的构成和执行和相似，只不过 useMemo 会执行传入的 callback()，存储的是该 callback()执行后的结果。
 
 ### mountMemo
 
-useMemo的创建。
+useMemo 的创建。
 
 ```javascript
 /**
@@ -76,10 +76,7 @@ useMemo的创建。
  * @param deps 依赖项
  * @returns {T}
  */
-function mountMemo<T>(
-  nextCreate: () => T,
-  deps: Array<mixed> | void | null,
-): T {
+function mountMemo<T>(nextCreate: () => T, deps: Array<mixed> | void | null): T {
   const hook = mountWorkInProgressHook();
   const nextDeps = deps === undefined ? null : deps;
   const nextValue = nextCreate(); // 计算useMemo里callback的返回值
@@ -97,10 +94,7 @@ function mountMemo<T>(
  * @param deps
  * @returns {T|*}
  */
-function updateMemo<T>(
-  nextCreate: () => T,
-  deps: Array<mixed> | void | null,
-): T {
+function updateMemo<T>(nextCreate: () => T, deps: Array<mixed> | void | null): T {
   const hook = updateWorkInProgressHook();
   const nextDeps = deps === undefined ? null : deps;
   const prevState = hook.memoizedState;
@@ -120,4 +114,3 @@ function updateMemo<T>(
   return nextValue;
 }
 ```
-
