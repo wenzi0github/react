@@ -846,7 +846,7 @@ function updateReducer<S, I, A>(
   const hook = updateWorkInProgressHook();
   const queue = hook.queue;
 
-  console.log('updateReducer', hook, queue, reducer);
+  // console.log('updateReducer', hook, queue, reducer);
 
   if (queue === null) {
     throw new Error(

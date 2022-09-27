@@ -279,7 +279,6 @@ export function jsx(type, config, maybeKey) {
     }
     key = '' + config.key;
   }
-  console.log('jsx config', type, config);
   if (hasValidRef(config)) {
     ref = config.ref;
   }
@@ -358,7 +357,6 @@ export function jsxDEV(type, config, maybeKey, source, self) {
       }
       key = '' + config.key;
     }
-    console.log('jsx config', type, config, config.ref);
     if (hasValidRef(config)) {
       ref = config.ref;
       warnIfStringRefCannotBeAutoConverted(config, self);

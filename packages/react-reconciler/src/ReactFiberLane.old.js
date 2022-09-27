@@ -208,7 +208,7 @@ function getHighestPriorityLanes(lanes: Lanes | Lane): Lanes {
  */
 export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
   // Early bailout if there's no pending work left.
-  console.log('getNextLanes', root.pendingLanes, wipLanes);
+  // console.log('getNextLanes', root.pendingLanes, wipLanes);
   const pendingLanes = root.pendingLanes; // 初始render()时为16，0b10000
   if (pendingLanes === NoLanes) {
     // 没有需要更新的任务，直接结束
