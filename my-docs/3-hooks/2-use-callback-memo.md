@@ -219,9 +219,156 @@ hanleClick();
 
 我们了解了 useCallback() 和 useMemo() 的基本用法之后，再来了解下他们源码的实现。
 
+我们在之前 renderWithHooks 的章节中也了解到，所有的 hooks 在内部实现时，都区分了 mount 阶段和 update 阶段，useCallback()和 useMemo() 两个 hooks 也不例外。
+
 ### 2.1 useCallback 的源码
 
+useCallback()在 React 内部实现时，分成了 mountCallback()和 updateCallback()。
+
+- mountCallback: 生成 hook 节点，并存储回调函数 callback 和依赖项 deps；
+- updateCallback: 新的依赖项与之前存储的依赖项进行对比，若没有变化，则直接返回，否则存储新的回调函数和依赖项；
+
+#### 2.1.1 mountCallback
+
+初始化时很简单，就是把传入的 callback 和依赖项 deps 存储起来。
+
+```javascript
+/**
+ * useCallback的创建
+ * @param callback
+ * @param deps
+ * @returns {T}
+ */
+function mountCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
+  const hook = mountWorkInProgressHook(); // 创建一个新的hook节点
+  const nextDeps = deps === undefined ? null : deps;
+  hook.memoizedState = [callback, nextDeps]; // 直接将callback和依赖项进行存储
+  return callback;
+}
+```
+
+可以看到，这里用数组的方式，把 callback 和依赖项存储到了 hook 节点的 memoizedState 属性上，然后返回这个 callback。因此我们执行 useCallback()的返回值就是这个传入 callback。
+
+#### 2.1.2 updateCallback
+
+updateCallback 的实现相对来说，也比较简单，关键点就在于依赖项的对比。
+
+```javascript
+/**
+ * useCallback的更新
+ * @param callback
+ * @param deps
+ * @returns {T|*}
+ */
+function updateCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
+  const hook = updateWorkInProgressHook();
+  const nextDeps = deps === undefined ? null : deps;
+  const prevState = hook.memoizedState; // 取出上次存储的数据: [callback, prevDeps]
+
+  // 若之前的数据不为空
+  if (prevState !== null) {
+    if (nextDeps !== null) {
+      /**
+       * 若依赖项不为空，且前后两个依赖项没有发生变化时，
+       * 则直接返回之前的callback（prevState[0]）；
+       * 有个 areHookInputsEqual() 我们先不关心细节，只需要知道是用来对比依赖项的
+       */
+      const prevDeps: Array<mixed> | null = prevState[1];
+      if (areHookInputsEqual(nextDeps, prevDeps)) {
+        // 若依赖项没有变化，则返回之前存储的callback
+        return prevState[0];
+      }
+    }
+  }
+
+  /**
+   * 若依赖项为空，或者依赖项发生了变动，则重新存储callback和依赖项
+   * 然后返回最新的callback
+   */
+  hook.memoizedState = [callback, nextDeps];
+  return callback;
+}
+```
+
+若前后两个依赖项都不为空，且依赖项没有发生变动，则直接返回之前存储的 callback，达到了缓存的目的。
+
+若依赖项为空，或者依赖项发生了变化，则重新存储 callback 和依赖项，然后返回最新的 callback。因此，若不设置依赖项，或者依赖项一直在变，则无法达到缓存的目的。
+
+这里有个工具函数 areHookInputsEqual()，该函数的作用，就是用来对比前后两个依赖项中所有的数据是否发生了变化，只要有一项的数据发生了变化（相同位置前后的两个数据不相等），则认为依赖项产生了变动。
+
 ### 2.2 useMemo 的源码
+
+useMemo()的实现，与 useCallback 很相似，只不过在 useMemo()中，执行了 callback，然后缓存的是其返回的结果。
+
+useMemo()在 React 内部实现时，分成了 mountMemo()和 updateMemo()。
+
+- mountMemo: 生成 hook 节点，并存储回调函数 callback **执行的结果**和依赖项 deps；
+- updateMemo: 新的依赖项与之前存储的依赖项进行对比，若没有变化，则直接返回，否则存储新的回调函数的**执行结果**和依赖项；
+
+#### 2.2.1 mountMemo
+
+初始节点源码的实现：
+
+```javascript
+/**
+ * useMemo的创建
+ * @param nextCreate
+ * @param deps 依赖项
+ * @returns {T}
+ */
+function mountMemo<T>(nextCreate: () => T, deps: Array<mixed> | void | null): T {
+  const hook = mountWorkInProgressHook(); // 在链表的末尾创建一个hook节点
+  const nextDeps = deps === undefined ? null : deps;
+
+  /**
+   * 计算useMemo里callback的返回值
+   * 这是与 useCallback() 不同的地方，这里会执行回调函数callback
+   */
+  const nextValue = nextCreate();
+  hook.memoizedState = [nextValue, nextDeps]; // 将返回值和依赖项进行存储
+  return nextValue; // 返回执行callback()的返回值
+}
+```
+
+我们从源码中可以看到，在 mountMemo()里，会执行回调函数 callback()，然后存储该函数的返回结果。
+
+#### 2.2.2 updateMemo
+
+在了解 updateCallback()的源码后，updaeMemo()的源码也很好理解。
+
+```javascript
+/**
+ * useMemo的更新
+ * @param nextCreate
+ * @param deps
+ * @returns {T|*}
+ */
+function updateMemo<T>(nextCreate: () => T, deps: Array<mixed> | void | null): T {
+  const hook = updateWorkInProgressHook();
+  const nextDeps = deps === undefined ? null : deps;
+  const prevState = hook.memoizedState;
+  if (prevState !== null) {
+    // Assume these are defined. If they're not, areHookInputsEqual will warn.
+    if (nextDeps !== null) {
+      const prevDeps: Array<mixed> | null = prevState[1];
+      if (areHookInputsEqual(nextDeps, prevDeps)) {
+        // 若依赖项没有变化，则返回之前存储的结果
+        return prevState[0];
+      }
+    }
+  }
+  // 重新计算callback的返回结果，并进行存储
+  const nextValue = nextCreate();
+  hook.memoizedState = [nextValue, nextDeps];
+  return nextValue;
+}
+```
+
+当依赖项不为空，且没有变化时，直接返回之前存储的数据；否则执行最新的回调函数，然后存储该函数最新的返回结果，并返回。
+
+## 3. 总结
+
+这是 React 源码内部实现起来比较简单的 hooks，我们先做个开胃菜，后续比如 useState(), useEffect() 等 hooks，整体的逻辑会更加复杂一些。
 
 参考链接：
 

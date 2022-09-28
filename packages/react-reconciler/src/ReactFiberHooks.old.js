@@ -2100,9 +2100,15 @@ function mountCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
 function updateCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
   const hook = updateWorkInProgressHook();
   const nextDeps = deps === undefined ? null : deps;
-  const prevState = hook.memoizedState;
+  const prevState = hook.memoizedState; // 取出上次存储的数据: [callback, prevDeps]
+
+  // 若之前的数据不为空
   if (prevState !== null) {
     if (nextDeps !== null) {
+      /**
+       * 若依赖项不为空，且前后两个依赖项没有发生变化时，
+       * 则直接返回之前的callback（prevState[0]）；
+       */
       const prevDeps: Array<mixed> | null = prevState[1];
       if (areHookInputsEqual(nextDeps, prevDeps)) {
         // 若依赖项没有变化，则返回之前存储的callback
@@ -2110,7 +2116,11 @@ function updateCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
       }
     }
   }
-  // 若依赖项有变化，或者没有依赖项，则重新存储callback和依赖项
+  
+  /**
+   * 若依赖项为空，或者依赖项发生了变动，则重新存储callback和依赖项
+   * 然后返回最新的callback
+   */
   hook.memoizedState = [callback, nextDeps];
   return callback;
 }
