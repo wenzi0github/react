@@ -196,5 +196,12 @@ function App() {
 
   // 显式地明确 userInfo 的各个属性，score可选
   const [userInfo, setUserInfo] = useState<UserInfoType>({ name: 'wenzi', age: 24 });
+
+  // 更复杂的ts类型
+  const [userInfo, setUserInfo] = useState<Pick<UserInfoType, 'name'>>({ name: 'wenzi' });
 }
 ```
+
+在 ts 中，明确各个变量参数的类型，一个原因是为了避免对其随意的赋值，再一个原因，从类型定义上我们就能知道这个变量的具体类型，或他的属性是什么。
+
+## 2. 源码解析
