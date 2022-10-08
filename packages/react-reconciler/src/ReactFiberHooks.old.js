@@ -847,6 +847,8 @@ function updateReducer<S, I, A>(
   const queue = hook.queue;
 
   // console.log('updateReducer', hook, queue, reducer);
+  console.log('hook baseState and memoizedState', hook.baseState, hook.memoizedState);
+  console.log('reducer', reducer);
 
   if (queue === null) {
     throw new Error(
@@ -864,6 +866,8 @@ function updateReducer<S, I, A>(
   // The last pending update that hasn't been processed yet.
   // 若hook中还有等待的update没有处理（低优先级的更新？）
   const pendingQueue = queue.pending;
+  console.log('queue', pendingQueue);
+
   if (pendingQueue !== null) {
     // We have new updates that haven't been processed yet.
     // We'll add them to the base queue.
@@ -892,6 +896,7 @@ function updateReducer<S, I, A>(
     current.baseQueue = baseQueue = pendingQueue;
     queue.pending = null; // 清空pending，下次render时就进不来了
   }
+  console.log('baseQueue', baseQueue);
 
   if (baseQueue !== null) {
     // We have a queue to process.
