@@ -1020,6 +1020,9 @@ function updateReducer<S, I, A>(
     queue.lanes = NoLanes;
   }
 
+  /**
+   * 返回最新的state
+   */
   const dispatch: Dispatch<A> = (queue.dispatch: any);
   return [hook.memoizedState, dispatch];
 }
@@ -1663,6 +1666,7 @@ function mountState<S>(
    * 但这里我们提前预设好了前2个参数：const dispatch = dispatchSetState.bind(null, currentlyRenderingFiber, queue)；
    * 因此 dispatch 和 queue.dispatch 在被调用时，只需要传入第3个参数action即可。
    * 在一个函数组件中，const [state, setState] = useState(0); 若 setState() 执行多次，说明 dispatch() 调用了多次，
+   * 每执行一次 setState(), 就会创建一个 update 节点，然后追加到 hook.queue.pending的末尾，
    * 所有的操作都会放在 pending 中： hook.queue.pending => update -> update -> update；
    * 具体操作： hook.queue.dispatch = dispatchSetState();
    * 初始值： hook.memoizedState = hook.baseState = initialState;
