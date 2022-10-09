@@ -290,3 +290,15 @@ function App() {
 ## 2. 源码解析
 
 我们在上面已经了解了 useState() 不少的使用方式，这里我们通过源码的角度，来看看为什么出现上面的这些现象。
+
+### 2.1 hook 的初始挂载
+
+<!-- useState()会引起组件的二次渲染和更新，因此在实现上会复杂很多。 -->
+
+在第一次初始声明 useState()，state 的值就是传入的值，若不传入，则是 undefined。
+
+```javascript
+const [count, setCount] = useState(0); // 此时 count 为 0
+```
+
+
