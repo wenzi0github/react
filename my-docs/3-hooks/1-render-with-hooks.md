@@ -311,7 +311,11 @@ function updateWorkInProgressHook(): Hook {
 2. 若 workInProgress 树中的 fiber 节点的下一个 hook 存在，则直接使用，否则就从对应的 current 的 fiber 节点克隆过来，然后把这些 hook 构建出新的链表放到 currentlyRenderingFiber.memoizedState 上，方便下次更新时使用；
 3. 对应的 current fiber 节点的里 hook 也同步向后移动，因此每次得到的都是两个 hook：currentHook 和 workInProgressHook；
 
-### 5.2 如何得到下一个 hook
+## 6. 几个问题的汇总
+
+通过观察上面的源码，我们也能理解下面的几个问题了。
+
+### 6.1 如何得到下一个 hook
 
 这里有个逻辑上的判断：
 
@@ -322,4 +326,12 @@ function updateWorkInProgressHook(): Hook {
 
 目前暂时还不清楚什么情况下不为空，个人猜测是在执行 hooks 的过程中，又产生了新的更新，所以导致所有的 hooks 重新执行。重新执行时，截止到目前，所有的 hook 节点都是存在的。
 
-### 5.1 每个 updateHook 里都会执行，他们怎么拿到属于自己类型的 hook 呢？
+刚开始 nextWorkInProgressHook 指向的是上次执行的 hook 的节点，然后再接着获取 next 指向的下一个节点，就是当前我们要使用的节点。
+
+### 6.2 hook 为什么只能在函数组件顶层进行声明
+
+因为这些所有的节点挂载的顺序，就是函数组件里执行所有 hooks 的顺序。在二次渲染时，也会按照既定的顺序来执行，那么再次执行 hook 的顺序就是第一次挂载节点的顺序是一样的。
+
+这就正好说明了一个问题：hook 为什么只能在函数组件顶层进行声明。
+
+因为每个 hook 都是按照顺序，依次从链表中获取的。React 本身是不知道你函数组件内部逻辑的，假如放到了 if 判断、循环、或者函数中，每次的渲染，都可能会因为不同的执行逻辑，导致某些 hook 不执行，进而导致 hook 的错乱。

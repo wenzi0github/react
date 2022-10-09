@@ -846,7 +846,9 @@ function updateReducer<S, I, A>(
   const hook = updateWorkInProgressHook();
   const queue = hook.queue;
 
-  console.log('updateReducer', hook, queue, reducer);
+  // console.log('updateReducer', hook, queue, reducer);
+  console.log('hook baseState and memoizedState', hook.baseState, hook.memoizedState);
+  console.log('reducer', reducer);
 
   if (queue === null) {
     throw new Error(
@@ -864,6 +866,8 @@ function updateReducer<S, I, A>(
   // The last pending update that hasn't been processed yet.
   // 若hook中还有等待的update没有处理（低优先级的更新？）
   const pendingQueue = queue.pending;
+  console.log('queue', pendingQueue);
+
   if (pendingQueue !== null) {
     // We have new updates that haven't been processed yet.
     // We'll add them to the base queue.
@@ -892,6 +896,7 @@ function updateReducer<S, I, A>(
     current.baseQueue = baseQueue = pendingQueue;
     queue.pending = null; // 清空pending，下次render时就进不来了
   }
+  console.log('baseQueue', baseQueue);
 
   if (baseQueue !== null) {
     // We have a queue to process.
@@ -1020,6 +1025,9 @@ function updateReducer<S, I, A>(
     queue.lanes = NoLanes;
   }
 
+  /**
+   * 返回最新的state
+   */
   const dispatch: Dispatch<A> = (queue.dispatch: any);
   return [hook.memoizedState, dispatch];
 }
@@ -1663,6 +1671,7 @@ function mountState<S>(
    * 但这里我们提前预设好了前2个参数：const dispatch = dispatchSetState.bind(null, currentlyRenderingFiber, queue)；
    * 因此 dispatch 和 queue.dispatch 在被调用时，只需要传入第3个参数action即可。
    * 在一个函数组件中，const [state, setState] = useState(0); 若 setState() 执行多次，说明 dispatch() 调用了多次，
+   * 每执行一次 setState(), 就会创建一个 update 节点，然后追加到 hook.queue.pending的末尾，
    * 所有的操作都会放在 pending 中： hook.queue.pending => update -> update -> update；
    * 具体操作： hook.queue.dispatch = dispatchSetState();
    * 初始值： hook.memoizedState = hook.baseState = initialState;
@@ -1695,6 +1704,14 @@ function rerenderState<S>(
   return rerenderReducer(basicStateReducer, (initialState: any));
 }
 
+/**
+ * 
+ * @param {*} tag 
+ * @param {*} create useEffect()中的callback
+ * @param {*} destroy mount时为undefined
+ * @param {*} deps 依赖项
+ * @returns 
+ */
 function pushEffect(tag, create, destroy, deps) {
   // 新创建一个effect的hook
   const effect: Effect = {
@@ -1835,12 +1852,12 @@ function updateRef<T>(initialValue: T): {|current: T|} {
  * 创建一个effect的hook
  * @param fiberFlags fiber的优先级
  * @param hookFlags hook的优先级
- * @param create effect要执行的函数
- * @param deps 依赖项，是个数组
+ * @param create effect要执行的回调函数
+ * @param deps 依赖项，可以为 null 或者数组
  */
 function mountEffectImpl(fiberFlags, hookFlags, create, deps): void {
-  const hook = mountWorkInProgressHook();
-  const nextDeps = deps === undefined ? null : deps;
+  const hook = mountWorkInProgressHook(); // 在链表中创建一个hook节点，用来进行挂载
+  const nextDeps = deps === undefined ? null : deps; // 依赖项
   currentlyRenderingFiber.flags |= fiberFlags;
   hook.memoizedState = pushEffect(
     HookHasEffect | hookFlags,
@@ -1855,8 +1872,8 @@ function mountEffectImpl(fiberFlags, hookFlags, create, deps): void {
  * 更新effect里的函数
  * @param fiberFlags
  * @param hookFlags
- * @param create
- * @param deps
+ * @param create 回调函数
+ * @param deps 依赖项
  */
 function updateEffectImpl(fiberFlags, hookFlags, create, deps): void {
   const hook = updateWorkInProgressHook(); // 获取当前的hook
@@ -1885,6 +1902,7 @@ function updateEffectImpl(fiberFlags, hookFlags, create, deps): void {
    * 无论deps是否有变化，最终都会执行到pushEffect()
    * 只是hookFlags和destroy不一样
    * 若需要执行时，则将destroy=undefined传给pushEffect
+   * 若之前没有hook，则无需执行上次的销毁操作
    * @type {Effect}
    */
   hook.memoizedState = pushEffect(
@@ -2091,9 +2109,15 @@ function mountCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
 function updateCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
   const hook = updateWorkInProgressHook();
   const nextDeps = deps === undefined ? null : deps;
-  const prevState = hook.memoizedState;
+  const prevState = hook.memoizedState; // 取出上次存储的数据: [callback, prevDeps]
+
+  // 若之前的数据不为空
   if (prevState !== null) {
     if (nextDeps !== null) {
+      /**
+       * 若依赖项不为空，且前后两个依赖项没有发生变化时，
+       * 则直接返回之前的callback（prevState[0]）；
+       */
       const prevDeps: Array<mixed> | null = prevState[1];
       if (areHookInputsEqual(nextDeps, prevDeps)) {
         // 若依赖项没有变化，则返回之前存储的callback
@@ -2101,7 +2125,11 @@ function updateCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
       }
     }
   }
-  // 若依赖项有变化，或者没有依赖项，则重新存储callback和依赖项
+  
+  /**
+   * 若依赖项为空，或者依赖项发生了变动，则重新存储callback和依赖项
+   * 然后返回最新的callback
+   */
   hook.memoizedState = [callback, nextDeps];
   return callback;
 }
