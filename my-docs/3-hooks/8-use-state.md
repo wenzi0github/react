@@ -17,7 +17,7 @@
    3. 同时执行多次 setState(count + 1)和 setState(count => count +1)，结果是否一样，原因是什么？
    4. 若 useState()是基于 props 初始化的，那 props 发生变化时，对应的 useState()会重新执行吗？
 
-`useState()`是我们最常见的几个 hooks 之一，今天我们来了解下他的用法和源码 shixian。
+`useState()`是我们最常见的几个 hooks 之一，今天我们来了解下他的用法和源码实现。
 
 ## 1. useState 的使用
 
@@ -121,11 +121,92 @@ function AppCallback() {
 
 点击一次按钮后，这两个组件最终展示的 count 值是不一样的，`<AppData />` 中展示的是 1，`<AppCallback />`中展示的是 3。
 
-为什么会出现这种现象呢？这是因为，在执行`setCount(count + 1)`时，变量 count 在函数组件的当前生命周期内，它永远是 0，因此即使调用再多的次数也没用。而`setCount(count => count + 1)`则不一样，callback 中的 prevState 则是执行到当前语句之前最新的那个 state。因此在执行第 2 条语句前，count 已经变成了 1；同理第 3 条语句。
+为什么会出现这种现象呢？这是因为，在执行`setCount(count + 1)`时，变量 count 在函数组件的当前生命周期内，它永远是 0，因此即使调用再多的次数也没用。这里我们简化一下，就方便理解了。
+
+```javascript
+function App() {
+  const count = 0; // count是一个固定值
+
+  setCount(count + 1);
+  setCount(count + 1);
+  setCount(count + 1);
+
+  setTimeout(() => {
+    setCount(count + 1);
+  }, 1000);
+}
+```
+
+对同一次的渲染来说，count 是一个固定值，无论在哪里使用这个值，都是固定的。`setCount(count+1)`的作用仅仅是把要更新的最新数据记录在了 React 内部，然后等待下次的渲染更新。
+
+而`setCount(count => count + 1)`则不一样，callback 中的 prevState 则是执行到当前语句之前最新的那个 state。因此在执行第 2 条语句前，count 已经变成了 1；同理第 3 条语句。
 
 我们稍后会从源码的层面分析下这种现象。
 
-### 1.2 object 类型的数据不能自动合并
+### 1.2 获取 setState()更新后的值
+
+很多同学在初次使用`useState()`时，经常会在调用 setState()后，马上就使用更新后的数据。
+
+```javascript
+function App() {
+  const [count, setCount] = useState(0);
+
+  const getList = () => {
+    // console.log(count);
+    fetch('https://www.xiabingbao.com', {
+      method: 'POST',
+      body: JSON.stringify({ count }),
+    });
+  };
+
+  const handleClick = () => {
+    setCount(count + 1);
+    console.log(count);
+
+    // 本意是想用更新后的最新count来调用 getList()
+    getList();
+  };
+}
+```
+
+其实我们通过上面第 1.1 节的了解，已经知道此时输出的 count 还是之间的数值 0。那怎么才能使用最新的数据，来做后续的操作呢？
+
+1. 先计算出最新值，然后同步传给 setCount()和 getList()；
+2. 用 useEffect()来监听 count 的变化；
+
+#### 1.2.1 先计算出最新的值
+
+我们可以把更新操作放在前面，先得到结果，然后再同步传给 setCount()和 getList()。
+
+```javascript
+const handleClick = () => {
+  const newCount = count + 1;
+  setCount(newCount);
+  getList(newCount);
+};
+```
+
+这就得要求我们把函数 getList()改造为传参的形式。
+
+#### 1.2.2 用 useEffect()来监听 count 的变化
+
+既然不确定什么时候回拿到最新的值，那我们就监听他的变化，等它了之后再进行后续的请求。
+
+```javascript
+function App() {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    getList();
+  }, [count]);
+
+  const handleClick = () => {
+    setCount(count + 1);
+  };
+}
+```
+
+### 1.3 object 类型的数据不能自动合并
 
 之前在类组件中的 state，我们可以只传入需要改动的字段，React 会帮助我们合并：
 
@@ -162,7 +243,9 @@ function App() {
 }
 ```
 
-### 1.3 typescript 的使用
+React 官方更推荐精细化地拆分控制，一方面是控制起来更方便，若 state 比较复杂，那在每次调用 setState()时，都要手动合并数据（当然，您可以自己实现一个自动合并数据的 hook）。另一方面在后期的维护和扩展上更容易，不必考虑其他属性的影响。
+
+### 1.4 typescript 的使用
 
 在 typescript 环境中，useState()是支持泛型的，state 的类型默认就是初始数据的类型，如：
 
@@ -178,7 +261,7 @@ function App() {
 
 一些相对复杂的数据类型，或者多种数据类型的组合，我们可以显式地设置 state 的类型。
 
-```javascript
+```typescript
 enum SEX_TYPE {
   MALE = 0,
   FEMALE = 1,
@@ -198,10 +281,12 @@ function App() {
   const [userInfo, setUserInfo] = useState<UserInfoType>({ name: 'wenzi', age: 24 });
 
   // 更复杂的ts类型
-  const [userInfo, setUserInfo] = useState<Pick<UserInfoType, 'name'>>({ name: 'wenzi' });
+  const [userInfo, setUserInfo] = useState<Required<Pick<UserInfoType, 'score'>>>({ score: 96 });
 }
 ```
 
 在 ts 中，明确各个变量参数的类型，一个原因是为了避免对其随意的赋值，再一个原因，从类型定义上我们就能知道这个变量的具体类型，或他的属性是什么。
 
 ## 2. 源码解析
+
+我们在上面已经了解了 useState() 不少的使用方式，这里我们通过源码的角度，来看看为什么出现上面的这些现象。

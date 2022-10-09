@@ -14,7 +14,7 @@
 
 declare let global: any;
 
-declare module 'react' {
+declare module '11react' {
   export class Component {
     props: any;
     state: any;
