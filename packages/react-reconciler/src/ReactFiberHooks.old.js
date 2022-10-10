@@ -2500,6 +2500,7 @@ function dispatchSetState<S, A>(
   }
 
   const lane = requestUpdateLane(fiber);
+  console.log('%cfiber lane', 'background:yellow', lane, fiber.lanes, fiber.alternate, fiber.alternate?.lanes);
 
   const update: Update<S, A> = {
     lane,
@@ -2510,11 +2511,15 @@ function dispatchSetState<S, A>(
   };
 
   if (isRenderPhaseUpdate(fiber)) {
+    /**
+     * 是否是渲染阶段的更新，若是，则拼接到 queue.pending 的后面
+     */
     enqueueRenderPhaseUpdate(queue, update);
   } else {
     /**
-     * 将update形成单向环形链表，并放到queue.pending里
-     * 即hook.queue.pending里，存放着update的数据
+     * 正常执行
+     * 将 update 形成单向环形链表，并放到 queue.pending 里
+     * 即 hook.queue.pending 里，存放着 update 的数据
      * queue.pending指向到update链表的最后一个元素，next即是第1个元素
      * 示意图： https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/31b3aa9d0f5d4284af1db2c73ea37b9a~tplv-k3u1fbpfcp-zoom-in-crop-mark:1304:0:0:0.awebp
      */
@@ -2567,8 +2572,7 @@ function dispatchSetState<S, A>(
         }
       }
     }
-    // 新state与现在的state不一样，开启新的调度
-    // todo: scheduleUpdateOnFiber 是干嘛的？
+
     const eventTime = requestEventTime();
 
     /**
