@@ -847,8 +847,8 @@ function updateReducer<S, I, A>(
   const queue = hook.queue;
 
   // console.log('updateReducer', hook, queue, reducer);
-  console.log('hook baseState and memoizedState', hook.baseState, hook.memoizedState);
-  console.log('reducer', reducer);
+  // console.log('hook baseState and memoizedState', hook.baseState, hook.memoizedState);
+  // console.log('reducer', reducer);
 
   if (queue === null) {
     throw new Error(
@@ -866,7 +866,7 @@ function updateReducer<S, I, A>(
   // The last pending update that hasn't been processed yet.
   // 若hook中还有等待的update没有处理（低优先级的更新？）
   const pendingQueue = queue.pending;
-  console.log('queue', pendingQueue);
+  // console.log('queue', pendingQueue);
 
   if (pendingQueue !== null) {
     // We have new updates that haven't been processed yet.
@@ -896,7 +896,7 @@ function updateReducer<S, I, A>(
     current.baseQueue = baseQueue = pendingQueue;
     queue.pending = null; // 清空pending，下次render时就进不来了
   }
-  console.log('baseQueue', baseQueue);
+  // console.log('baseQueue', baseQueue);
 
   if (baseQueue !== null) {
     // We have a queue to process.
@@ -930,6 +930,7 @@ function updateReducer<S, I, A>(
           // 将该state给了newBaseState方便下次循环时使用
           newBaseQueueFirst = newBaseQueueLast = clone;
           newBaseState = newState;
+          console.log('newBaseState', newBaseState);
         } else {
           // 若待更新链表不为空，则clone向后追加即可
           // newBaseQueueLast.next = clone;
@@ -2500,7 +2501,7 @@ function dispatchSetState<S, A>(
   }
 
   const lane = requestUpdateLane(fiber);
-  console.log('%cfiber lane', 'background:yellow', lane, fiber.lanes, fiber.alternate, fiber.alternate?.lanes);
+  // console.log('%cfiber lane', 'background:yellow', lane, fiber.lanes, fiber.alternate?.lanes);
 
   const update: Update<S, A> = {
     lane,
@@ -2584,6 +2585,7 @@ function dispatchSetState<S, A>(
      * @type {FiberRoot}
      */
     const root = scheduleUpdateOnFiber(fiber, lane, eventTime);
+    // console.log(eventTime, root);
     if (root !== null) {
       entangleTransitionUpdate(root, queue, lane);
     }

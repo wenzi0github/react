@@ -287,18 +287,132 @@ function App() {
 
 在 ts 中，明确各个变量参数的类型，一个原因是为了避免对其随意的赋值，再一个原因，从类型定义上我们就能知道这个变量的具体类型，或他的属性是什么。
 
-## 2. 源码解析
-
 我们在上面已经了解了 useState() 不少的使用方式，这里我们通过源码的角度，来看看为什么出现上面的这些现象。
 
-### 2.1 hook 的初始挂载
+## 2 hook 的初始挂载
 
-<!-- useState()会引起组件的二次渲染和更新，因此在实现上会复杂很多。 -->
+useState() 这个 hook 的大致结构：
 
-在第一次初始声明 useState()，state 的值就是传入的值，若不传入，则是 undefined。
+![useState() 这个 hook 的大致结构](https://www.xiabingbao.com/upload/5885634448639db4a.png)
+
+在第一次初始声明 useState()，state 的值就是传入的值，若不传入，则是 undefined。我们再来看下 hook 的结构：
 
 ```javascript
-const [count, setCount] = useState(0); // 此时 count 为 0
+const hook: Hook = {
+  memoizedState: null, // 这个hook目前在函数组件中显示的值，初始时，即为传入的数据（若传入的是函数，则为函数执行后的结果）
+
+  /**
+   * 该hook所有的set操作开始执行时的初始值，初始挂载时，该值与 memoizedState 相同；
+   * 在中间更新过程中，若存在低优先级的set操作，则 baseState 此时为执行到目前set的值
+   **/
+  baseState: null,
+
+  /**
+   * 执行set操作的链表，这里包含了上次遗留下来的所有set操作，和本次将要执行的所有set操作
+   **/
+  baseQueue: null,
+
+  // 所有的set操作，都会挂载到 queue.pendig 上
+  queue: null,
+
+  // 指向到下一个hook的指针
+  next: null,
+};
 ```
 
+注意：我们之前在讲解 hooks 挂载的时候，也讲到过 memoizedState 属性。这两个 memoizedState 属性是不一样的。fiber.memoizedState 是用来挂载 hook 节点链表的；而现在讲解的 hook.memoizedState 是用来挂载该 hook 的数值的。
 
+```javascript
+function mountState<S>(initialState: (() => S) | S): [S, Dispatch<BasicStateAction<S>>] {
+  /**
+   * 创建一个hook节点，并将其挂载到 currentlyRenderingFiber 链表的最后
+   * @type {Hook}
+   */
+  const hook = mountWorkInProgressHook();
+  if (typeof initialState === 'function') {
+    // 若传入的是函数，则使用执行该函数后得到的结果
+    initialState = initialState();
+  }
+  /**
+   * 设置该 hook 的初始值
+   * memoizedState 用来存储当前hook要显示的数据
+   * baseState 用来存储执行setState()的初始数据
+   **/
+  hook.memoizedState = hook.baseState = initialState;
+
+  // 为该 hook 添加一个 queue 结构，用来存放所有的 setState() 操作
+  const queue = {
+    pending: null,
+    interleaved: null,
+    lanes: NoLanes,
+    dispatch: null,
+    lastRenderedReducer: basicStateReducer, // 上次render后使用的reducer
+    lastRenderedState: initialState, // 上次render后的state
+  };
+  hook.queue = queue;
+
+  /**
+   * 这里用到了 bind() 的偏函数的特性，我们稍后会在下面进行讲解，
+   *
+   */
+  const dispatch = (queue.dispatch = dispatchSetState.bind(null, currentlyRenderingFiber, queue));
+  return [hook.memoizedState, dispatch]; // useState() 返回的数据
+}
+```
+
+bind()方法可以返回一个新的函数，并且可以为这个新函数预设初始的参数，然后剩余的参数给到这个新函数。官方文档：[bind()的偏函数功能](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Function/bind#%E5%81%8F%E5%87%BD%E6%95%B0)。
+
+我们这里暂时先不管这个函数 dispatchSetState() 的作用是什么，目前只关心参数的传递：
+
+```javascript
+function dispatchSetState(fiber: Fiber, queue, action) {}
+```
+
+dispatchSetState() 本身要传入 3 个参数的：
+
+1. fiber: 当前处理的 fiber 节点
+2. queue: 该 hook 的 queue 结构，用来挂载 setState() 中的操作的；
+3. action: 要执行的操作，即 setState(action)里的 action，可能是数据，也可能是函数；
+
+可是我们在执行 `dispatch()`（即 setState()）时只需要传入一个参数就行了，这就是因为源码中利用到了 bind() 的偏函数功能。
+
+再来看下派生出 dispatch() 的操作：
+
+```javascript
+/**
+ * 这里已经提前把当前的 fiber 节点和 hook 的 queue 结构传进去了，
+ * 就只留一个 action 参数给dispatch。
+ */
+const dispatch = (queue.dispatch = dispatchSetState.bind(null, currentlyRenderingFiber, queue));
+```
+
+可以看到，通过 bind()方法，已经提前把当前的 fiber 节点和 hook 的 queue 结构传进去了，就只留一个 action 参数给 dispatch。在调用`dispatch(action时)`，就是在执行`dispatchSetState(fiber, queue, action)`。
+
+如果不太理解的话，我们再看一个简化后的例子：
+
+```javascript
+/**
+ * 设置学生的某学科的分数
+ *
+ * @param nick 学生姓名
+ * @param subject 学科
+ * @param score 分数
+ */
+const setStudentInfo = (nick, subject, score) => {
+  console.log(nick, subject, score);
+};
+
+// 设置jack的分数
+// 已预设了1个参数，剩余的两个参数供新函数设置
+const setJackInfo = setStudentInfo.bind(null, 'Jack');
+setJackInfo('math', 89); // Jack math 89
+setJackInfo('computer', 92); // Jack computer 92
+
+// 已预设了2个参数，剩余的一个参数供新函数设置
+const setTomEnglishScore = setStudentInfo.bind(null, 'Tom', 'english');
+setTomEnglishScore(97); // Tom english 97
+```
+
+## 3. dispatchSetState
+
+dispatch 具体的实现，就是在 dispatchSetState() 中。
