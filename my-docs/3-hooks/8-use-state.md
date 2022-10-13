@@ -360,7 +360,7 @@ function mountState<S>(initialState: (() => S) | S): [S, Dispatch<BasicStateActi
 }
 ```
 
-bind()方法可以返回一个新的函数，并且可以为这个新函数预设初始的参数，然后剩余的参数给到这个新函数。官方文档：[bind()的偏函数功能](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Function/bind#%E5%81%8F%E5%87%BD%E6%95%B0)。
+bind()方法可以基于某个函数返回一个新的函数，并且可以为这个新函数预设初始的参数，然后剩余的参数给到这个新函数。官方文档：[bind()的偏函数功能](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Function/bind#%E5%81%8F%E5%87%BD%E6%95%B0)。
 
 我们这里暂时先不管这个函数 dispatchSetState() 的作用是什么，目前只关心参数的传递：
 
@@ -415,4 +415,17 @@ setTomEnglishScore(97); // Tom english 97
 
 ## 3. dispatchSetState
 
-dispatch 具体的实现，就是在 dispatchSetState() 中。
+我们使用的 setState()（即源码中的 dispatch）就是 dispatchSetState() 函数派生出来的，我们来看下他内部的具体实现。
+
+我们先看下传入的参数：
+
+```javascript
+/**
+ * 派生一个 setState(action) 方法，并将传入的
+ * 同一个setState方法多次调用时，均会放到queue.pending的链表中
+ * @param {Fiber} fiber 当前的fiber节点
+ * @param {UpdateQueue<S, A>} queue
+ * @param {A} action 即执行setState()传入的数据，可能是数据，也能是方法，setState(1) 或 setState(prevState => prevState+1);
+ */
+function dispatchSetState<S, A>(fiber: Fiber, queue: UpdateQueue<S, A>, action: A) {}
+```
