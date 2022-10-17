@@ -61,7 +61,7 @@ function useInterval(callback, delay) {
 
 ## 3. 源码
 
-我们在文章[React18 源码解析之 hooks 的挂载](https://www.xiabingbao.com)中也知道，所有的 hooks 的使用，氛围初始创建和更新两个阶段。
+我们在文章[React18 源码解析之 hooks 的挂载](https://www.xiabingbao.com/post/react/react-hooks-rjp9x1.html)中也知道，所有的 hooks 的使用，氛围初始创建和更新两个阶段。
 
 ### 3.1 初始创建阶段
 

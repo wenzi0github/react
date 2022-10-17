@@ -468,6 +468,13 @@ export function getCurrentTime() {
  * @returns {Lanes|Lane}
  */
 export function requestUpdateLane(fiber: Fiber): Lane {
+  /**
+   * 从上往下有几种判断方式
+   * 1. 若是同步渲染方式，则直接返回，但在React18中，默认是并发模式，不走这里；
+   * 2. 若当前fiber节点正处于渲染阶段，则从lanes中选取优先级最高的那个；
+   * 3. 若是过渡优先级，则获取当前优先级的下一个优先级；
+   * 4. 若手动设置了
+   */
   // Special cases
   // 获取到当前渲染的模式：sync mode（同步模式） 或 concurrent mode（并发模式）
   const mode = fiber.mode;

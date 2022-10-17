@@ -2500,6 +2500,10 @@ function dispatchSetState<S, A>(
     }
   }
 
+  /**
+   * 获取当前 fiber 更新的优先级，
+   * 所有action更新的优先级，都是以此为标准的
+   */
   const lane = requestUpdateLane(fiber);
   // console.log('%cfiber lane', 'background:yellow', lane, fiber.lanes, fiber.alternate?.lanes);
 
@@ -2527,6 +2531,8 @@ function dispatchSetState<S, A>(
     enqueueUpdate(fiber, queue, update, lane);
 
     const alternate = fiber.alternate;
+    console.log(fiber.lanes === NoLanes &&
+      (alternate === null || alternate.lanes === NoLanes), fiber.lanes, alternate, alternate?.lanes);
     if (
       fiber.lanes === NoLanes &&
       (alternate === null || alternate.lanes === NoLanes)
@@ -2575,6 +2581,7 @@ function dispatchSetState<S, A>(
     }
 
     const eventTime = requestEventTime();
+    console.log(action, eventTime);
 
     /**
      * scheduleUpdateOnFiber()方法的执行流程如下：

@@ -16,6 +16,7 @@
    2. setInterval() + useState() 产生什么现象，为什么会这样？
    3. 同时执行多次 setState(count + 1)和 setState(count => count +1)，结果是否一样，原因是什么？
    4. 若 useState()是基于 props 初始化的，那 props 发生变化时，对应的 useState()会重新执行吗？
+   5. useState()为什么要返回一个数组？而不是Object类型之类的？
 
 `useState()`是我们最常见的几个 hooks 之一，今天我们来了解下他的用法和源码实现。
 
@@ -421,7 +422,7 @@ setTomEnglishScore(97); // Tom english 97
 
 ```javascript
 /**
- * 派生一个 setState(action) 方法，并将传入的
+ * 派生一个 setState(action) 方法，并将传入的action存放起来，每次调用时，都执行对应的action
  * 同一个setState方法多次调用时，均会放到queue.pending的链表中
  * @param {Fiber} fiber 当前的fiber节点
  * @param {UpdateQueue<S, A>} queue
@@ -429,3 +430,5 @@ setTomEnglishScore(97); // Tom english 97
  */
 function dispatchSetState<S, A>(fiber: Fiber, queue: UpdateQueue<S, A>, action: A) {}
 ```
+
+
