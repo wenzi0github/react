@@ -471,8 +471,8 @@ export function markStarvedLanesAsExpired(
   // it as expired to force it to finish.
   let lanes = pendingLanes;
   while (lanes > 0) {
-    const index = pickArbitraryLaneIndex(lanes);
-    const lane = 1 << index;
+    const index = pickArbitraryLaneIndex(lanes); // 获取lanes中最左边的1，相当于优先级最低的任务
+    const lane = 1 << index; // 1向左移动index位，即得到该赛道的值
 
     // 获取当前位置上任务的过期时间，如果没有则会根据任务的优先级创建一个过期时间
     // 如果有则会判断任务是否过期，过期了则会将当前任务的lane添加到expiredLanes上
@@ -491,7 +491,10 @@ export function markStarvedLanesAsExpired(
       }
     } else if (expirationTime <= currentTime) {
       // This lane expired
-      // 该更新任务已更新，将其添加到过期队列中
+      /**
+       * 该任务的过期时间已小于当前事件，说明该任务过期了，应当要执行了
+       * 如某任务在250ms时过期，当前已是300ms，说明该任务到了该执行的时候了
+       */
       root.expiredLanes |= lane;
     }
 

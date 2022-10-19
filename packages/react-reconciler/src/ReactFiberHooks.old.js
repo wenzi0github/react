@@ -2479,8 +2479,8 @@ function dispatchReducerAction<S, A>(
 }
 
 /**
- * 派生一个setState方法
- * 同一个setState方法多次调用时，均会放到queue.pending的链表中
+ * 派生一个 setState(action) 方法，并将传入的 action 存放起来
+ * 同一个 useState() 的 setState(action) 方法可能会执行多次，这里会把参数里的 action 均会放到queue.pending的链表中
  * @param {Fiber} fiber 当前的fiber节点
  * @param {UpdateQueue<S, A>} queue
  * @param {A} action 即执行setState()传入的数据，可能是数据，也能是方法，setState(1) 或 setState(prevState => prevState+1);
@@ -2502,17 +2502,20 @@ function dispatchSetState<S, A>(
 
   /**
    * 获取当前 fiber 更新的优先级，
-   * 所有action更新的优先级，都是以此为标准的
+   * 当前 action 要执行的优先级，就是触发当前fiber更新更新的优先级
    */
   const lane = requestUpdateLane(fiber);
   // console.log('%cfiber lane', 'background:yellow', lane, fiber.lanes, fiber.alternate?.lanes);
 
+  /**
+   * 将 action 操作封装成一个 update节点，用于后续构建链表使用
+   */
   const update: Update<S, A> = {
-    lane,
-    action,
-    hasEagerState: false,
-    eagerState: null,
-    next: (null: any),
+    lane, // 该节点的优先级，即当前fiber的优先级
+    action, // 操作，可能直接是数值，也可能是函数
+    hasEagerState: false, // 是否是急切状态
+    eagerState: null, // 提前计算出结果，便于在render()之前判断是否要触发更新
+    next: (null: any), // 指向到下一个节点的指针
   };
 
   if (isRenderPhaseUpdate(fiber)) {
@@ -2531,8 +2534,6 @@ function dispatchSetState<S, A>(
     enqueueUpdate(fiber, queue, update, lane);
 
     const alternate = fiber.alternate;
-    console.log(fiber.lanes === NoLanes &&
-      (alternate === null || alternate.lanes === NoLanes), fiber.lanes, alternate, alternate?.lanes);
     if (
       fiber.lanes === NoLanes &&
       (alternate === null || alternate.lanes === NoLanes)
@@ -2541,11 +2542,22 @@ function dispatchSetState<S, A>(
       // next state before entering the render phase. If the new state is the
       // same as the current state, we may be able to bail out entirely.
       /**
-       * 当前队列为空，说明我们迫切地想在进入渲染之前得到state的值；
-       * 若新的state与现在的state一样，我们可能可以直接退出
-       * @type {null}
+       * 当前组件不存在更新，那么首次触发状态更新时，就能立刻计算出最新状态，进而与当前状态比较。
+       * 如果两者一致，则省去了后续render的过程。
+       * 可以直接执行当前的action，用来提前判断是否需要当前的函数组件fiber节点
+       * 若新的state与现在的state一样，我们可以直接提前退出，
+       * 若不相同，则标记该fiber节点是需要更新的；同时计算后的state可以直接用于后面的更新流程，不用再重新计算一次。
+       * 根据这文档， https://www.51cto.com/article/703718.html
+       * 比如从0更新到1，此后每次的更新都是1，即使是相同的值，也会再次重新渲染一次，因为两棵树上的fiber节点，
+       * 在一次更新后，只会有一个fiber节点会消除更新标记，
+       * 再更新一次，另一个对应的节点才会消除更新标记；再下一次，就会进入到当前的流程，然后直接return
        */
-      const lastRenderedReducer = queue.lastRenderedReducer; // 上次render后的reducer，在mount时即basicStateReducer
+      /**
+       * function basicStateReducer<S>(state: S, action: BasicStateAction<S>): S {
+            return typeof action === 'function' ? action(state) : action;
+          }
+       */
+      const lastRenderedReducer = queue.lastRenderedReducer; // 上次render后的reducer，在mount时即 basicStateReducer
       if (lastRenderedReducer !== null) {
         let prevDispatcher;
         if (__DEV__) {
@@ -2567,7 +2579,6 @@ function dispatchSetState<S, A>(
             // if the component re-renders for a different reason and by that
             // time the reducer has changed.
             // 若这次得到的state与上次的一样，则不再重新渲染
-            // 不过因为一些其他原因？
             return;
           }
         } catch (error) {
@@ -2581,7 +2592,6 @@ function dispatchSetState<S, A>(
     }
 
     const eventTime = requestEventTime();
-    console.log(action, eventTime);
 
     /**
      * scheduleUpdateOnFiber()方法的执行流程如下：
@@ -2590,6 +2600,11 @@ function dispatchSetState<S, A>(
      * 然后进入到其他各种执行流程，在执行到beginWork()里，会执行renderWithHooks()方法，里面会区分是mount还是update，
      * 在执行setState时，会再次调用 scheduleUpdateOnFiber()，重新渲染这个 function component。
      * @type {FiberRoot}
+     */
+    /**
+     * 将当前的优先级lane和触发时间给到 fiber 和 fiber.alternate，
+     * 并以 fiber 的父级节点往上到root所有的节点，将 lane 添加他们的 childLanes 属性中，表示该节点的子节点有更新，
+     * 在 commit 阶段就会更新该 fiber 节点
      */
     const root = scheduleUpdateOnFiber(fiber, lane, eventTime);
     // console.log(eventTime, root);

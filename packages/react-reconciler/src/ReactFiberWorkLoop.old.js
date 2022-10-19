@@ -844,6 +844,7 @@ export function isInterleavedUpdate(fiber: Fiber, lane: Lane) {
  * 此函数，并且就在退出任务之前。
  * 此时 root.updateQueue.shared.pending = sharedQueue， element结构在sharedQueue其中的一个update节点，
  * 其实这里只有一个update节点
+ * https://zhuanlan.zhihu.com/p/348313033
  * @param root
  * @param currentTime
  */
@@ -853,8 +854,12 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
   // Check if any lanes are being starved by other work. If so, mark them as
   // expired so we know to work on those next.
   // 为当前任务根据优先级添加过期时间
-  // 并检查未执行的任务中是否有任务过期，有任务过期则expiredLanes中添加该任务的lane
-  // 在后续任务执行中以同步模式执行，避免饥饿问题
+  /**
+   * 根据 currentTime，判断root节点的 pendingLanes 中的任务，是否有过期的，
+   * 若该任务没有设置过期时间，则根据该任务的lane设置过期时间，
+   * 若任务已过期，则将该任务放到 expiredLanes 中，表示马上就要执行，
+   * 在后续任务执行中以同步模式执行，避免饥饿问题
+   */
   markStarvedLanesAsExpired(root, currentTime);
 
   // Determine the next lanes to work on, and their priority.
@@ -910,7 +915,7 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
       }
     }
     // The priority hasn't changed. We can reuse the existing task. Exit.
-    // 若新任务的优先级与现有任务的优先级一样，那么则会中断当前新任务向下的执行，重(chong)用之前现有的任务
+    // 若新任务的优先级与现有任务的优先级一样，则继续正常执行之前的任务
     return;
   }
 

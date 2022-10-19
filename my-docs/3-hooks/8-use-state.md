@@ -16,7 +16,7 @@
    2. setInterval() + useState() 产生什么现象，为什么会这样？
    3. 同时执行多次 setState(count + 1)和 setState(count => count +1)，结果是否一样，原因是什么？
    4. 若 useState()是基于 props 初始化的，那 props 发生变化时，对应的 useState()会重新执行吗？
-   5. useState()为什么要返回一个数组？而不是Object类型之类的？
+   5. useState()为什么要返回一个数组？而不是 Object 类型之类的？
 
 `useState()`是我们最常见的几个 hooks 之一，今天我们来了解下他的用法和源码实现。
 
@@ -416,14 +416,14 @@ setTomEnglishScore(97); // Tom english 97
 
 ## 3. dispatchSetState
 
-我们使用的 setState()（即源码中的 dispatch）就是 dispatchSetState() 函数派生出来的，我们来看下他内部的具体实现。
+我们使用的 setState()（即源码中的 dispatch）就是 dispatchSetState() 函数派生出来的，执行 useState()的 set 操作，就是执行我们的 dispatchSetState()。
 
-我们先看下传入的参数：
+先看下传入的参数：
 
 ```javascript
 /**
- * 派生一个 setState(action) 方法，并将传入的action存放起来，每次调用时，都执行对应的action
- * 同一个setState方法多次调用时，均会放到queue.pending的链表中
+ * 派生一个 setState(action) 方法，并将传入的 action 存放起来
+ * 同一个 useState() 的 setState(action) 方法可能会执行多次，这里会把参数里的 action 均会放到queue.pending的链表中
  * @param {Fiber} fiber 当前的fiber节点
  * @param {UpdateQueue<S, A>} queue
  * @param {A} action 即执行setState()传入的数据，可能是数据，也能是方法，setState(1) 或 setState(prevState => prevState+1);
@@ -431,4 +431,106 @@ setTomEnglishScore(97); // Tom english 97
 function dispatchSetState<S, A>(fiber: Fiber, queue: UpdateQueue<S, A>, action: A) {}
 ```
 
+dispatchSetState() 已经让提前传入 fiber 和 queue 的两个参数了，用来表示当前处理的是哪个 fiber 节点，action 的操作放到哪个链表中。这样当执行 useState() 中的 set 方法时，就能直接跟当前的 fiber 节点和当前的 hook 进行绑定。
 
+再看下具体的实现：
+
+```javascript
+function dispatchSetState<S, A>(fiber: Fiber, queue: UpdateQueue<S, A>, action: A) {
+  /**
+   * 获取当前 fiber 更新的优先级，
+   * 当前 action 要执行的优先级，就是触发当前fiber更新更新的优先级
+   */
+  const lane = requestUpdateLane(fiber);
+
+  /**
+   * 将 action 操作封装成一个 update节点，用于后续构建链表使用
+   */
+  const update: Update<S, A> = {
+    lane, // 该节点的优先级，即当前fiber的优先级
+    action, // 操作，可能直接是数值，也可能是函数
+    hasEagerState: false, // 是否是急切状态
+    eagerState: null, // 提前计算出结果，便于在render()之前判断是否要触发更新
+    next: (null: any), // 指向到下一个节点的指针
+  };
+
+  if (isRenderPhaseUpdate(fiber)) {
+    /**
+     * 是否是渲染阶段的更新，若是，则拼接到 queue.pending 的后面
+     */
+    enqueueRenderPhaseUpdate(queue, update);
+  } else {
+    /**
+     * 正常执行
+     * 将 update 形成单向环形链表，并放到 queue.pending 里
+     * 即 hook.queue.pending 里，存放着 update 的数据
+     * queue.pending指向到update链表的最后一个元素，next即是第1个元素
+     * 示意图： https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/31b3aa9d0f5d4284af1db2c73ea37b9a~tplv-k3u1fbpfcp-zoom-in-crop-mark:1304:0:0:0.awebp
+     */
+    enqueueUpdate(fiber, queue, update, lane);
+
+    const alternate = fiber.alternate;
+    if (fiber.lanes === NoLanes && (alternate === null || alternate.lanes === NoLanes)) {
+      /**
+       * 当前组件不存在更新，那么首次触发状态更新时，就能立刻计算出最新状态，进而与当前状态比较。
+       * 如果两者一致，则省去了后续render的过程。
+       * 可以直接执行当前的action，用来提前判断是否需要当前的函数组件fiber节点
+       * 若新的state与现在的state一样，我们可以直接提前退出，
+       * 若不相同，则标记该fiber节点是需要更新的；同时计算后的state可以直接用于后面的更新流程，不用再重新计算一次。
+       * 根据这文档， https://www.51cto.com/article/703718.html
+       * 比如从0更新到1，此后每次的更新都是1，即使是相同的值，也会再次重新渲染一次，因为两棵树上的fiber节点，
+       * 在一次更新后，只会有一个fiber节点会消除更新标记，
+       * 再更新一次，另一个对应的节点才会消除更新标记；再下一次，就会进入到当前的流程，然后直接return
+       */
+      const lastRenderedReducer = queue.lastRenderedReducer; // 上次render后的reducer，在mount时即 basicStateReducer
+      if (lastRenderedReducer !== null) {
+        let prevDispatcher;
+        try {
+          const currentState: S = (queue.lastRenderedState: any); // 上次render后的state，mount时为传入的initialState
+          const eagerState = lastRenderedReducer(currentState, action);
+
+          update.hasEagerState = true; // 表示该节点的数据已计算过了
+          update.eagerState = eagerState; // 存储计算出来后的数据
+          if (is(eagerState, currentState)) {
+            // 若这次得到的state与上次的一样，则不再重新渲染
+            return;
+          }
+        } catch (error) {
+          // Suppress the error. It will throw again in the render phase.
+        } finally {
+          if (__DEV__) {
+            ReactCurrentDispatcher.current = prevDispatcher;
+          }
+        }
+      }
+    }
+
+    const eventTime = requestEventTime();
+
+    /**
+     * 将当前的优先级lane和触发时间给到 fiber 和 fiber.alternate，
+     * 并以 fiber 的父级节点往上到root所有的节点，将 lane 添加他们的 childLanes 属性中，表示该节点的子节点有更新，
+     * 在 commit 阶段就会更新该 fiber 节点
+     * 这里面还存在一个任务优先级的调度，我们暂时先不考虑
+     */
+    const root = scheduleUpdateOnFiber(fiber, lane, eventTime);
+    if (root !== null) {
+      entangleTransitionUpdate(root, queue, lane);
+    }
+  }
+
+  markUpdateInDevTools(fiber, lane, action);
+}
+```
+
+dispatchSetState()函数主要是做 3 件事情：
+
+1. 把所有执行的 setState(action) 里的参数 action，全部挂载到链表中；
+2. 若之前没有更新（比如第一次渲染后的更新等），马上计算出新的 state，然后与之前的 state 对比，若没有更新，则直接退出；
+3. 若有更新，则标记该 fiber 节点及所有的父级节点；刚才计算出的新的 state 可以在接下来的更新中使用；
+
+action 通过 update 节点挂载到链表上后：
+
+![action挂载到queue上的循环链表](https://www.xiabingbao.com/upload/369363502befebae2.jpg)
+
+关于为什么要构建循环链表，如何构建循环链表，请参考[React18 中的循环链表](https://www.xiabingbao.com)
