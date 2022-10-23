@@ -791,6 +791,13 @@ function createFunctionComponentUpdateQueue(): FunctionComponentUpdateQueue {
   };
 }
 
+/**
+ * 对当前的 state 执行的基本操作，若传入的不是函数类型，则直接返回该值，
+ * 若传入的是函数类型，返回执行该函数的结果
+ * @param {S} state 当前节点的state
+ * @param {BasicStateAction<S>} action 接下来要对该state执行的操作
+ * @returns {S}
+ */
 function basicStateReducer<S>(state: S, action: BasicStateAction<S>): S {
   // $FlowFixMe: Flow doesn't like mixed types
   return typeof action === 'function' ? action(state) : action;
@@ -861,10 +868,11 @@ function updateReducer<S, I, A>(
   const current: Hook = (currentHook: any);
 
   // The last rebase update that is NOT part of the base state.
+  // 上次渲染后，遗留下来的低优先级任务
   let baseQueue = current.baseQueue;
 
   // The last pending update that hasn't been processed yet.
-  // 若hook中还有等待的update没有处理（低优先级的更新？）
+  // 当前要执行的操作
   const pendingQueue = queue.pending;
   // console.log('queue', pendingQueue);
 
@@ -2505,6 +2513,7 @@ function dispatchSetState<S, A>(
    * 当前 action 要执行的优先级，就是触发当前fiber更新更新的优先级
    */
   const lane = requestUpdateLane(fiber);
+  console.log(action, lane);
   // console.log('%cfiber lane', 'background:yellow', lane, fiber.lanes, fiber.alternate?.lanes);
 
   /**

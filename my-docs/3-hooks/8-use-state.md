@@ -361,6 +361,40 @@ function mountState<S>(initialState: (() => S) | S): [S, Dispatch<BasicStateActi
 }
 ```
 
+mountState()的整体流程：
+
+1. 创建一个 hook 节点，挂载所有初始的数据；
+2. 若 initialState 是函数类型，则使用执行它后的结果；
+3. 执行当前节点的方法是 basicStateReducer() 函数；这里跟我们后续要讲解的 useReducer() 有关系；
+4. 将 hook 节点挂载到函数组件对应的 fiber 节点上；
+5. 返回该 hook 的初始值 和 set 方法；
+
+basicStateReducer() 函数的具体实现：
+
+```javascript
+/**
+ * 对当前的 state 执行的基本操作，若传入的不是函数类型，则直接返回该值，
+ * 若传入的是函数类型，返回执行该函数的结果
+ * @param {S} state 当前节点的state
+ * @param {BasicStateAction<S>} action 接下来要对该state执行的操作
+ * @returns {S}
+ */
+function basicStateReducer(state, action) {
+  return typeof action === 'function' ? action(state) : action;
+}
+```
+
+这个 action 就是我们执行 useState() 里的第 2 个返回值的 set 操作。如：
+
+```javascript
+setCount(count + 1); // action 是数值
+setCount(count => {
+  // action是函数，参数为当前的 count
+  console.log('dispatch setCount');
+  return count + 1;
+});
+```
+
 bind()方法可以基于某个函数返回一个新的函数，并且可以为这个新函数预设初始的参数，然后剩余的参数给到这个新函数。官方文档：[bind()的偏函数功能](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Function/bind#%E5%81%8F%E5%87%BD%E6%95%B0)。
 
 我们这里暂时先不管这个函数 dispatchSetState() 的作用是什么，目前只关心参数的传递：
@@ -485,22 +519,15 @@ function dispatchSetState<S, A>(fiber: Fiber, queue: UpdateQueue<S, A>, action: 
       const lastRenderedReducer = queue.lastRenderedReducer; // 上次render后的reducer，在mount时即 basicStateReducer
       if (lastRenderedReducer !== null) {
         let prevDispatcher;
-        try {
-          const currentState: S = (queue.lastRenderedState: any); // 上次render后的state，mount时为传入的initialState
-          const eagerState = lastRenderedReducer(currentState, action);
 
-          update.hasEagerState = true; // 表示该节点的数据已计算过了
-          update.eagerState = eagerState; // 存储计算出来后的数据
-          if (is(eagerState, currentState)) {
-            // 若这次得到的state与上次的一样，则不再重新渲染
-            return;
-          }
-        } catch (error) {
-          // Suppress the error. It will throw again in the render phase.
-        } finally {
-          if (__DEV__) {
-            ReactCurrentDispatcher.current = prevDispatcher;
-          }
+        const currentState: S = (queue.lastRenderedState: any); // 上次render后的state，mount时为传入的initialState
+        const eagerState = lastRenderedReducer(currentState, action);
+
+        update.hasEagerState = true; // 表示该节点的数据已计算过了
+        update.eagerState = eagerState; // 存储计算出来后的数据
+        if (is(eagerState, currentState)) {
+          // 若这次得到的state与上次的一样，则不再重新渲染
+          return;
         }
       }
     }
@@ -533,4 +560,42 @@ action 通过 update 节点挂载到链表上后：
 
 ![action挂载到queue上的循环链表](https://www.xiabingbao.com/upload/369363502befebae2.jpg)
 
-关于为什么要构建循环链表，如何构建循环链表，请参考[React18 中的循环链表](https://www.xiabingbao.com)
+关于为什么要构建循环链表，如何构建循环链表，请参考[React18 中的循环链表](https://www.xiabingbao.com)，先埋坑，后续补充。
+
+注意，scheduleUpdateOnFiber()函数，仅仅是用来标记该 fiber 有更新需要处理，而并不会立刻重新执行函数组件。
+
+## 4. updateState
+
+当函数组件二次渲染时，可能会进入到 updateState() 里的逻辑。而 updateState() 实际上执行的是 updateReducer()。
+
+```javascript
+/**
+ * useState()的更新阶段
+ * 传入要更新的值initialState，并返回新的[state, setState]
+ * @param initialState
+ * @returns {[(*|S), Dispatch<S>]}
+ */
+function updateState<S>(initialState: (() => S) | S): [S, Dispatch<BasicStateAction<S>>] {
+  return updateReducer(basicStateReducer, (initialState: any));
+}
+```
+
+这也说明了 updateState() 和 updateReducer() 执行的逻辑是一样的，只不过 updateState 指定了第 1 个参数，为 basicStateReducer()。这里我们暂时不展开对 useReducer() 的 hook 的讲解。
+
+## 5. updateReducer
+
+在 updateReducer() 中，很大一部分的内容是用来对不同优先级的 set 的调度，和任务链表的拼接。
+
+因为对同一个 useState() 的 hook 来讲，不是所有的 set 操作都要同时一起执行的。比如有的在异步的数据请求后才执行的，有的是放在定时器中执行的。React 会根据不同的优先级，来挑选出当前符合优先级的任务来执行。那么也就会有优先级不足的任务留到下次的渲染时执行。
+
+updateReducer() 的代码比较长，我们主要分为三部分来讲解:
+
+1. 把上次遗留下来的低优先级任务与当前的任务拼接（这里不对当前任务进行优先级的区分，会在第 2 步进行区分）到 baseQueue 属性上；
+2. 遍历 baseQueue 属性上所有的任务，若符合当前优先级的，则执行该 update 节点；若不符合，则将此节点到最后的所有节点都存储起来，便于下次渲染遍历，并将到此刻计算出的 state 作为下次更新时的基准 state（在 React 内部，下次渲染的初始 state，可能并不是当前页面展示的那个 state，只有所有的任务都满足优先级完成执行后，两者才是一样的）；
+3. 遍历完所有可以执行的任务后，得到一个新的 newState，然后判断与之前的 state 是否一样，若不一样，则标记该 fiber 节点需要更新，并返回新的 newState 和 dispatch 方法。
+
+直接看源码：
+
+```javascript
+console.log(1);
+```
