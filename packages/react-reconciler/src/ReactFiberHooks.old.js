@@ -838,24 +838,8 @@ function updateReducer<S, I, A>(
   initialArg: I,
   init?: I => S,
 ): [S, Dispatch<A>] {
-  /**
-   * 几个问题还没明白：
-   * 1. updateWorkInProgressHook() 方法是如何得到当前执行的hook的？
-   * 2. currentHook这个全局变量在哪儿控制的？currentHook和hook是同一个吗？
-   * 
-   * 呐，现在就知道了！
-   * 1. updateWorkInProgressHook() 就从fiber.memoizedState中获取当前指针对应的hook，每执行一次该方法，就获取下一个节点的hook，
-   *  虽然每个hook里都有这个执行这个方法，但执行hook的顺序和链表中的顺序是一样的，因此得到的都自己上次存储的那个hook；
-   * 2. currentHook 就是在 updateWorkInProgressHook() 中赋值的，hook是workInProgress树的fiber节点的那个hook，currentHook是
-   *  current树的fiber节点的那个hook，即该hook上次渲染时的那个状态的hook，可用于前后两次的对比
-   * @type {Hook}
-   */
   const hook = updateWorkInProgressHook();
   const queue = hook.queue;
-
-  // console.log('updateReducer', hook, queue, reducer);
-  // console.log('hook baseState and memoizedState', hook.baseState, hook.memoizedState);
-  // console.log('reducer', reducer);
 
   if (queue === null) {
     throw new Error(
@@ -865,6 +849,9 @@ function updateReducer<S, I, A>(
 
   queue.lastRenderedReducer = reducer;
 
+  /**
+   * 内部有两棵fiber树，从current树中取出上次渲染，含有优先级不足的任务的列表
+   */
   const current: Hook = (currentHook: any);
 
   // The last rebase update that is NOT part of the base state.
@@ -879,7 +866,9 @@ function updateReducer<S, I, A>(
   if (pendingQueue !== null) {
     // We have new updates that haven't been processed yet.
     // We'll add them to the base queue.
-    // 我们还有新的updates没有处理
+    /**
+     * 若上次有遗留下来的任务，且当前任务不为空，则将当前任务拼接到 baseQueue 的后面
+     */
     if (baseQueue !== null) {
       // Merge the pending queue and the base queue.
       // 调整baseQueue和pendingQueue的next指向
@@ -904,16 +893,28 @@ function updateReducer<S, I, A>(
     current.baseQueue = baseQueue = pendingQueue;
     queue.pending = null; // 清空pending，下次render时就进不来了
   }
-  // console.log('baseQueue', baseQueue);
 
   if (baseQueue !== null) {
     // We have a queue to process.
     const first = baseQueue.next;
     let newState = current.baseState; // 上次的state值，每次循环时都计算得到该值，然后供下次循环时使用
 
-    let newBaseState = null; // 下次更新时要使用的初始值，若update任务全部执行了则值为newState，若有低优先级的没有执行，则值为newState
-    let newBaseQueueFirst = null; // 下次更新时的链表，若update优先级不足直接存放进去，不执行；若优先级满足，则也存放进去，同时本地render时执行该update
-    let newBaseQueueLast = null; // 下次更新时的链表的尾指针，用于存储数据，并一直指向该链表最后的那个update节点
+    /**
+     * 下次更新时要使用的初始值，若update任务全部执行了则值为newState，
+     * 若有低优先级的没有执行，则值为newState
+     */
+    let newBaseState = null;
+
+    /**
+     * 下次更新时的链表，若update优先级不足直接存放进去，不执行；
+     * 若优先级满足，执行该update，同时若 newBaseQueueFirst 不为空，为了执行顺序不变，则也将其存放进去
+     */
+    let newBaseQueueFirst = null;
+
+    /**
+     * newBaseQueueFirst链表的尾指针
+     */
+    let newBaseQueueLast = null;
     let update = first;
     do {
       const updateLane = update.lane;
@@ -921,10 +922,10 @@ function updateReducer<S, I, A>(
         // Priority is insufficient. Skip this update. If this is the first
         // skipped update, the previous update/state is the new base
         // update/state.
-        // 优先级不足，跳过此更新。若这是第一个跳过的更新，则之前的更新/状态就是现在的更新和状态
+        // 优先级不足，跳过此更新。若这是第一个跳过的更新，则把循环到上一个节点得到的更新/状态，
+        // 存储为下一次render()的初始值
         /**
          * 将当前的状态赋值给新的节点存储起来，方便下次render时调用
-         * @type {{next: *, action: (A|*), hasEagerState: boolean, lane: Lane, eagerState: (S|*)}}
          */
         const clone: Update<S, A> = {
           lane: updateLane,
@@ -938,7 +939,6 @@ function updateReducer<S, I, A>(
           // 将该state给了newBaseState方便下次循环时使用
           newBaseQueueFirst = newBaseQueueLast = clone;
           newBaseState = newState;
-          console.log('newBaseState', newBaseState);
         } else {
           // 若待更新链表不为空，则clone向后追加即可
           // newBaseQueueLast.next = clone;
@@ -981,9 +981,13 @@ function updateReducer<S, I, A>(
         if (update.hasEagerState) {
           // If this update is a state update (not a reducer) and was processed eagerly,
           // we can use the eagerly computed state
-          // 如果这个更新是状态更新（不是reducer）并且被急切处理，我们可以使用急切计算的状态
+          /**
+           * 若在执行useState()时，之前的fiber为null，则可以提前执行，
+           * hasEagerState 属性为空，说明该 update 已经执行过了，可以直接使用该结果
+           */
           newState = ((update.eagerState: any): S);
         } else {
+          // 根据action传入的是数据还是函数，来得到新的state
           const action = update.action;
           newState = reducer(newState, action);
         }
@@ -992,10 +996,16 @@ function updateReducer<S, I, A>(
     } while (update !== null && update !== first);
 
     if (newBaseQueueLast === null) {
-      // 若没有任何低优先级的任务，所有的update都执行了
+      /**
+       * 若没有任何低优先级的任务，所有的update都执行了，
+       * 则下次render()执行时的state，就是所有update节点执行完毕后得到的state
+       */
       newBaseState = newState;
     } else {
-      // 若有低优先级的update任务，则next指针指向到第1个，形成单向环形链表
+      /**
+       * 若有低优先级的update任务，则next指针指向到第1个，形成单向环形链表，
+       * 而该链表下次执行的初始值，已在设置第1个节点时，设置过了
+       */
       newBaseQueueLast.next = (newBaseQueueFirst: any);
     }
 
@@ -1007,7 +1017,7 @@ function updateReducer<S, I, A>(
     }
 
     hook.memoizedState = newState; // 整个update链表执行完，得到的newState，用于本次渲染时使用
-    hook.baseState = newBaseState; // 这次计算后得到的newState
+    hook.baseState = newBaseState; // 下次执行链表时的初始值
     hook.baseQueue = newBaseQueueLast; // 新的update链表，可能为空
 
     queue.lastRenderedState = newState; // 将本次的state存储为上次rendered后的值

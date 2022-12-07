@@ -58,14 +58,14 @@ function App() {
 }
 ```
 
-同时，useState()还有如下的几个特点：
+用过 useState() 的同学，还知道它还有如下的几个特点：
 
-1. setState()的参数，既可以传入普通数据，也可以传入 callback；在以 callback 的方式传入时，callback 里的参数就是当前最新的那个 state；
-2. 传入的数据并不会自动和之前的进行合并，如上面的`userInfo`，我们需要手动合并后，再调用 set 方法；
+1. setState()的参数，既可以传入普通数据，也可以传入 callback；在以 callback 的方式传入时，callback 里的参数就是截止到当前最新的 state，使用的是执行 callback()后的返回值；
+2. 传入的数据并不会自动和之前的数据进行合并，如上面的`userInfo`，我们需要手动合并后，再调用 set 方法；
 
 ### 1.1 传参的区别
 
-useState()在初始时，或调用 setState()时，都有两种传参方式：一种是直接传入数据；一种是以函数的形式传入，state 的值就是该函数的执行结果。
+useState()在初始时，或调用 setState()时，都有两种传参方式：一种是直接传入数据；一种是以函数 callback 的形式传入，state 的值就是该函数执行后的结果。
 
 ```javascript
 function App() {
@@ -170,7 +170,7 @@ function App() {
 }
 ```
 
-其实我们通过上面第 1.1 节的了解，已经知道此时输出的 count 还是之间的数值 0。那怎么才能使用最新的数据，来做后续的操作呢？
+其实我们通过上面第 1.1 节的了解，已经知道此时输出的 count 还是之前的数值 0。那怎么才能使用最新的数据，来做后续的操作呢？
 
 1. 先计算出最新值，然后同步传给 setCount()和 getList()；
 2. 用 useEffect()来监听 count 的变化；
@@ -191,7 +191,7 @@ const handleClick = () => {
 
 #### 1.2.2 用 useEffect()来监听 count 的变化
 
-既然不确定什么时候回拿到最新的值，那我们就监听他的变化，等它了之后再进行后续的请求。
+既然不确定什么时候回拿到最新的值，那我们就监听他的变化，等它更新了之后再进行后续的请求。
 
 ```javascript
 function App() {
@@ -224,7 +224,7 @@ class App {
 }
 ```
 
-但在函组件的`useState()`中，这里就需要我们自己来合并数据了，然后再传给 setState()。
+但在函组件的`useState()`中，传入什么数据，就使用什么数据。若还需要使用之前的部分数据时，就需要我们自己来合并数据了，然后再传给 setState()。
 
 ```javascript
 function App() {
@@ -448,6 +448,8 @@ const setTomEnglishScore = setStudentInfo.bind(null, 'Tom', 'english');
 setTomEnglishScore(97); // Tom english 97
 ```
 
+再回到 dispatch(action) 这儿，我们在执行该方法的时候，其实已经预定了前 2 个参数：fiber 和 queue。即 dispath()已经和当前的 fibe 节点强绑定了，执行的操作只会在该 fiber 节点中产生影响。
+
 ## 3. dispatchSetState
 
 我们使用的 setState()（即源码中的 dispatch）就是 dispatchSetState() 函数派生出来的，执行 useState()的 set 操作，就是执行我们的 dispatchSetState()。
@@ -564,6 +566,8 @@ action 通过 update 节点挂载到链表上后：
 
 注意，scheduleUpdateOnFiber()函数，仅仅是用来标记该 fiber 有更新需要处理，而并不会立刻重新执行函数组件。
 
+这里有个重要的优化操作，就是若在该fiber节点中的useState()时，之前没有更新（之前fiber节点为空或前几次都没更新），则这次的计算不受之前更新的影响
+
 ## 4. updateState
 
 当函数组件二次渲染时，可能会进入到 updateState() 里的逻辑。而 updateState() 实际上执行的是 updateReducer()。
@@ -580,18 +584,18 @@ function updateState<S>(initialState: (() => S) | S): [S, Dispatch<BasicStateAct
 }
 ```
 
-这也说明了 updateState() 和 updateReducer() 执行的逻辑是一样的，只不过 updateState 指定了第 1 个参数，为 basicStateReducer()。这里我们暂时不展开对 useReducer() 的 hook 的讲解。
+这也说明了 updateState() 和 updateReducer() 执行的逻辑是一样的，只不过 updateState 已经默认指定了第 1 个参数，为 basicStateReducer()，而执行 useReducer() 时的 udateReducer，我们可以自己实现一个 reducer。这里我们暂时不展开对 useReducer() 的 hook 的讲解。
 
 ## 5. updateReducer
 
 在 updateReducer() 中，很大一部分的内容是用来对不同优先级的 set 的调度，和任务链表的拼接。
 
-因为对同一个 useState() 的 hook 来讲，不是所有的 set 操作都要同时一起执行的。比如有的在异步的数据请求后才执行的，有的是放在定时器中执行的。React 会根据不同的优先级，来挑选出当前符合优先级的任务来执行。那么也就会有优先级不足的任务留到下次的渲染时执行。
+因为对同一个 useState() 的 hook 来讲，不是所有的 set 操作都要同时一起执行的。因为不同的 set 操作可能有不同的优先级，比如有的在异步的数据请求后才执行的，有的是放在定时器中执行的。React 会根据不同的优先级，来挑选出当前符合优先级的任务来执行。那么也就会有优先级不足的任务留到下次的渲染时执行。
 
 updateReducer() 的代码比较长，我们主要分为三部分来讲解:
 
-1. 把上次遗留下来的低优先级任务与当前的任务拼接（这里不对当前任务进行优先级的区分，会在第 2 步进行区分）到 baseQueue 属性上；
-2. 遍历 baseQueue 属性上所有的任务，若符合当前优先级的，则执行该 update 节点；若不符合，则将此节点到最后的所有节点都存储起来，便于下次渲染遍历，并将到此刻计算出的 state 作为下次更新时的基准 state（在 React 内部，下次渲染的初始 state，可能并不是当前页面展示的那个 state，只有所有的任务都满足优先级完成执行后，两者才是一样的）；
+1. 把上次遗留下来的低优先级任务（如果有的话）与当前的任务拼接（这里不对当前任务进行优先级的区分，会在第 2 步进行区分）到 baseQueue 属性上；
+2. 遍历 baseQueue 属性上所有的任务，若符合当前优先级的，则执行该 update 节点；若不符合，则将此节点到最后的**所有节点**都存储起来，便于下次渲染遍历，并将到此刻计算出的 state 作为下次更新时的基准 state（在 React 内部，下次渲染的初始 state，可能并不是当前页面展示的那个 state，只有所有的任务都满足优先级完成执行后，两者才是一样的）；
 3. 遍历完所有可以执行的任务后，得到一个新的 newState，然后判断与之前的 state 是否一样，若不一样，则标记该 fiber 节点需要更新，并返回新的 newState 和 dispatch 方法。
 
 直接看源码：
