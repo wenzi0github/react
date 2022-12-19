@@ -2,27 +2,11 @@
 
 > 我们解析的源码是 React18.1.0 版本，请注意版本号。React 源码学习的 GitHub 仓库地址：[https://github.com/wenzi0github/react](https://github.com/wenzi0github/react)。
 
-这个往后放一放，要讲解 useState()，得先了解 useReducer()。
-
-大纲：
-
-1. useState()的用法；注意，setState()不会自动合并参数；
-2. 若写了多次的 setState()，内部怎么决定哪些可以执行，哪些不执行，是否每一次的调用，都要重新执行一次函数组件？
-3. 为什么不能直接修改 state？
-4. 源码
-5. 不同方式的传参，有什么区别？
-6. 常见的几个问题
-   1. useState 是同步的还是异步的？有没有办法可以同步执行？
-   2. setInterval() + useState() 产生什么现象，为什么会这样？
-   3. 同时执行多次 setState(count + 1)和 setState(count => count +1)，结果是否一样，原因是什么？
-   4. 若 useState()是基于 props 初始化的，那 props 发生变化时，对应的 useState()会重新执行吗？
-   5. useState()为什么要返回一个数组？而不是 Object 类型之类的？
-
 `useState()`是我们最常见的几个 hooks 之一，今天我们来了解下他的用法和源码实现。
 
 ## 1. useState 的使用
 
-我们先来 useState() 的用法，我们知道 setState()的参数，既可以传入普通数据，也可以传入 callback：
+我们先来 useState() 的用法，我们知道 useState() 返回的第 2 个参数是 dispatch(即 set 方法)，用来更新 useState() 的状态值。dispatch 的参数，既可以传入普通数据，也可以传入有返回值的函数：
 
 ```javascript
 import { useState } from 'react';
@@ -61,11 +45,11 @@ function App() {
 用过 useState() 的同学，还知道它还有如下的几个特点：
 
 1. setState()的参数，既可以传入普通数据，也可以传入 callback；在以 callback 的方式传入时，callback 里的参数就是截止到当前最新的 state，使用的是执行 callback()后的返回值；
-2. 传入的数据并不会自动和之前的数据进行合并，如上面的`userInfo`，我们需要手动合并后，再调用 set 方法；
+2. 传入的数据若是 object 类型，并不会自动和之前的数据进行合并，如上面的`userInfo`，我们需要手动合并后，再调用 set 方法；
 
 ### 1.1 传参的区别
 
-useState()在初始时，或调用 setState()时，都有两种传参方式：一种是直接传入数据；一种是以函数 callback 的形式传入，state 的值就是该函数执行后的结果。
+useState()在初始时，或调用 dispatch()时，都有两种传参方式：一种是直接传入数据；一种是以函数 callback 的形式传入，state 的值就是该函数执行后的结果。
 
 ```javascript
 function App() {
@@ -566,7 +550,7 @@ action 通过 update 节点挂载到链表上后：
 
 注意，scheduleUpdateOnFiber()函数，仅仅是用来标记该 fiber 有更新需要处理，而并不会立刻重新执行函数组件。
 
-这里有个重要的优化操作，就是若在该fiber节点中的useState()时，之前没有更新（之前fiber节点为空或前几次都没更新），则这次的计算不受之前更新的影响
+这里有个重要的优化操作，就是若在该 fiber 节点中的 useState()时，之前没有更新（之前 fiber 节点为空或前几次都没更新），则这次的计算不受之前更新的影响
 
 ## 4. updateState
 
@@ -598,8 +582,150 @@ updateReducer() 的代码比较长，我们主要分为三部分来讲解:
 2. 遍历 baseQueue 属性上所有的任务，若符合当前优先级的，则执行该 update 节点；若不符合，则将此节点到最后的**所有节点**都存储起来，便于下次渲染遍历，并将到此刻计算出的 state 作为下次更新时的基准 state（在 React 内部，下次渲染的初始 state，可能并不是当前页面展示的那个 state，只有所有的任务都满足优先级完成执行后，两者才是一样的）；
 3. 遍历完所有可以执行的任务后，得到一个新的 newState，然后判断与之前的 state 是否一样，若不一样，则标记该 fiber 节点需要更新，并返回新的 newState 和 dispatch 方法。
 
-直接看源码：
+源码会比较长，这里我们直接看下他的结构：
 
 ```javascript
-console.log(1);
+function updateReducer<S, I, A>(reducer: (S, A) => S, initialArg: I, init?: I => S): [S, Dispatch<A>] {
+  if (pendingQueue !== null) {
+    // 若上次更新时，有遗留下来的低优先级任务；同时当前也有要更新的任务，
+    // 则将当前跟新的任务拼接到上次遗留任务的后面
+    // 然后放到 baseQueue 中
+  }
+
+  if (baseQueue !== null) {
+    // 当前次的更新时，更新链表不为空，那就得检查是否有可以在本地更新时要执行的任务
+
+    do {
+      if (!isSubsetOfLanes(renderLanes, updateLane)) {
+        // 当前任务不满足优先级，存储起来，方便下次更新时使用
+      } else {
+        // 若任务优先级足够，则执行该任务；
+        // 但若此时已经有低优先级的任务，为保证下次更新跳过这些任务，
+        // 也会将这些任务存储起来
+      }
+    } while (update !== null && update !== first);
+
+    if (newBaseQueueLast === null) {
+      // 所有的任务都符合优先级，都执行完了，则下次更新时的初始值，就是上面do-while后得到的 newState 的值。
+    } else {
+      // 若有低优先级的任务，则将链表的最后一个节点的next指向到头结点，形成单向环形链表
+    }
+
+    if (!is(newState, hook.memoizedState)) {
+      // 若新产生的 newState 跟之前的值不一样，则标记该fiber节点需要更新
+      markWorkInProgressReceivedUpdate();
+    }
+
+    hook.memoizedState = newState; // 整个update链表执行完，得到的newState，用于本次渲染时使用
+    hook.baseState = newBaseState; // 下次执行链表时的初始值
+    hook.baseQueue = newBaseQueueLast; // 新的update链表，可能为空
+
+    queue.lastRenderedState = newState; // 将本次的state存储为上次rendered后的值
+  }
+
+  /**
+   * 返回最新的state
+   */
+  const dispatch: Dispatch<A> = (queue.dispatch: any);
+  return [hook.memoizedState, dispatch];
+}
 ```
+
+## 6. 总结
+
+这篇文章耽误的时间比较长，不过也总算是把 useState() 的源码顺下来了。了解完源码的实现后，我们再来看几个关于它的相关问题。
+
+### 6.1 多次调用 useState() 中的 dispatch 方法，会产生多次渲染吗？
+
+这个要看情况来具体分析。针对相同优先级的操作，即使有多个 useState()，或执行多次的 dispatch()方法，也仅会引起一次的组件渲染。
+
+如下面的代码，虽然有 2 个 useState()，且各自的 dispatch()方法也执行了多次，但这些执行的优先级是相同的，则 React 内部会将其合并到一起执行，然后再一起更新渲染。
+
+```javascript
+function App() {
+  const [count, setCount] = useState(0);
+  const [random, setRandom] = useState(0);
+
+  const handleClick = () => {
+    setCount(count => count + 1);
+    setCount(count => count + 1);
+    setRandom(Math.random());
+    setRandom(Math.random());
+  };
+
+  console.log('refresh', Math.random());
+
+  return (
+    <div>
+      <p>
+        App, {count}, {random}
+      </p>
+      <button onClick={handleClick}>click me</button>
+    </div>
+  );
+}
+```
+
+每次点击按钮时，只会输出一次`refresh`。
+
+### 6.2 props 发生变动时，useState()中的数据会变吗？
+
+不会。
+
+虽然 props 的变动，会导致组件的重新刷新，但 useState()中的数据并不会发生变动，即使 useState()用了 props 中的数据作为初始值。这是因为 state 值的变动，只受 dispatch() 的影响。
+
+若想在 props 变动时，重新调整 state 的值，可以用 useEffect() 来监听 props 的变动：
+
+```javascript
+function App(props) {
+  const [count, setCount] = useState(props.count);
+
+  useEffect(() => {
+    // props 中的 count 属性发生变动时，重新赋值
+    setCount(props.count);
+  }, [props.count]);
+}
+```
+
+### 6.3 直接修改 state 的值，会怎样？
+
+state 作为函数组件中的一个变量，当然可以直接修改它的值，然而这并不会 React 组件的重新渲染，页面上的数据也不会更新。唯一有影响的，就是后续要使用该变量的地方，会使用到新数据。但若其他 useState() 导致了组件的刷新，刚才变量的值，若是基本类型（比如数字、字符串等），会重置为修改之前的值；若是复杂类型，基于 js 的 [对象引用](https://segmentfault.com/a/1190000014724227) 特性，也会同步修改 React 内部存储的数据，但不会引起视图的变化。
+
+```javascript
+function App() {
+  let [count, setCount] = useState(0);
+  const [user, setUser] = useState({ age: 20 });
+  const [random, setRandom] = useState(0);
+
+  // 直接修改state的值
+  const handleStateDirectly = () => {
+    count = 2;
+    user.age = 23;
+
+    // 值可以改变，但视图并不会更新
+    console.log(count, user);
+  };
+
+  // 修改random，用来刷新组件
+  const handeRandom = () => {
+    setRandom(Math.random());
+  };
+
+  return (
+    <div className="App">
+      <p>{count}</p>
+      <p>{user.age}</p>
+      <p>
+        <button onClick={handleStateDirectly}>change state directly</button>
+      </p>
+      <p>
+        <button onClick={handeRandom}>set random</button>
+      </p>
+    </div>
+  );
+}
+```
+
+在上面的样例中，直接修改 state 的值，也是可以修改的，但这种方式并不会引起视图的刷新；而通过其他 hook 的正常赋值后，相应的 state 也会发生不一样的变化，count 会重置为 0，而 user 则会变为 { age: 23}。
+
+因此，千万不要直接修改 state 的值，否则会收到意想不到的惊喜。
