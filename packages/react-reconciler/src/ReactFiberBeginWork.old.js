@@ -3439,6 +3439,9 @@ function updateScopeComponent(current, workInProgress, renderLanes) {
   return workInProgress.child;
 }
 
+/**
+ * 标记该fiber节点需要强制更新
+ */
 export function markWorkInProgressReceivedUpdate() {
   didReceiveUpdate = true;
 }

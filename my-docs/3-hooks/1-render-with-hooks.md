@@ -2,7 +2,7 @@
 
 > 我们解析的源码是 React18.1.0 版本，请注意版本号。React 源码学习的 GitHub 仓库地址：[https://github.com/wenzi0github/react](https://github.com/wenzi0github/react)。
 
-在之前讲解函数 beginWork() 时，稍微说了下 renderWithHooks() 的流程，不过当时只说了中间会执行`Component(props)`的操作，并没有讲解函数组件中的 hooks 是如何挂载的，这里我们详细讲解下。
+在之前讲解[函数 beginWork()](https://www.xiabingbao.com/post/react/react-beginwork-riew9h.html) 时，稍微说了下 renderWithHooks() 的流程，不过当时只说了中间的`Component(props)`的执行部分，并没有讲解函数组件中的 hooks 是如何挂载的，这里我们详细讲解下。
 
 ## 1. hooks 的简单样例
 
@@ -47,9 +47,9 @@ export function useState<S>(initialState: (() => S) | S): [S, Dispatch<BasicStat
 }
 ```
 
-可见实际上执行的是 `dispatcher.useState()`，那么 resolveDispatcher()函数里执行了什么呢？
+可见实际上执行的是 `dispatcher.useState()`，这里面会通过执行 `resolveDispatcher()` 得到一个 dispatcher，然后调用该对象上的 useState() 方法。
 
-我们来看看：
+我们来看下 resolveDispatcher() 的执行流程：
 
 ```javascript
 import ReactCurrentDispatcher from './ReactCurrentDispatcher';
@@ -97,9 +97,9 @@ function renderWithHooks() {
 
 mount 阶段的 hooks 仅仅是用来进行 hooks 节点的生成，然后形成链表挂载在函数的 fiber 节点上。update 阶段，则相对来说稍微复杂一些，可能会有触发函数二次执行渲染的可能。
 
-我们在函数组件中使用的 useState(), useEffect()等，仅仅是先挂了一个名字，具体比如是执行 mountState()，还是 updateState()，是在更新时，执行 renderWithHooks()的函数逻辑里，在运行`Component()`之前，才去判断的。具体源码位置：[ReactFiberHooks.old.js#L446](https://github.com/wenzi0github/react-source/blob/34fc2eed3ed7c79686432d41aa402bf991840787/packages/react-reconciler/src/ReactFiberHooks.old.js#L446)。
+我们在函数组件中使用的 useState(), useEffect()等，仅仅是先挂了一个名字，具体比如是执行 mountState()，还是 updateState()？是在 renderWithHooks()的函数逻辑里，到执行`Component()`之前，才会判断的。具体源码位置：[ReactFiberHooks.old.js#L446](https://github.com/wenzi0github/react-source/blob/34fc2eed3ed7c79686432d41aa402bf991840787/packages/react-reconciler/src/ReactFiberHooks.old.js#L446)。
 
-上面第 2 节函数 resolveDispatcher() 使用的 ReactCurrentDispatcher 和当前 renderWithHooks()里的 ReactCurrentDispatcher ，是同一个，因此在这里挂载数据后，在第 2 节中就可以直接读取出来。
+上面第 2 节函数 resolveDispatcher() 使用的 ReactCurrentDispatcher 和当前 renderWithHooks()里的 ReactCurrentDispatcher ，引用的是同一个对象，因此在这里挂载数据后，在第 2 节中就可以直接读取出来。
 
 HooksDispatcherOnMount 和 HooksDispatcherOnUpdate 两个的区别在于：
 
@@ -108,7 +108,7 @@ HooksDispatcherOnMount 和 HooksDispatcherOnUpdate 两个的区别在于：
 
 ## 4. hooks 的挂载
 
-我们这里不讲某个具体的 hook 的使用方式和内部原理，主要是来说下这些 hooks 放在哪儿，是以一种怎样的方式存储的。
+我们这里不讲每个具体的 hook 的使用方式和内部原理，主要是来说下这些 hooks 放在哪儿，是以一种怎样的方式存储的。
 
 在 [packages/react-reconciler/src/ReactFiberHooks.old.js](https://github.com/wenzi0github/react/blob/main/packages/react-reconciler/src/ReactFiberHooks.old.js) 中，观察下诸如 mountState(), mountEffect(), mountRef() 等几个 mount 阶段的 hooks，都会先调用 `mountWorkInProgressHook()` 来得到一个 hook 节点。如：
 
@@ -192,13 +192,13 @@ workInProgressHook 指针永远指向到链表的最后一个 hook 节点，若 
 
 我在之前学习到这个位置时，当时稍微有个小疑问，一个函数组件里有多个 hooks，而像 useState()这种 hook，又会多次执行诸如 setState()的操作，那这些操作放在哪里呢？是新形成了一个 hook 节点吗？还是怎样？
 
-这里到时候当我们了解 useState()这个 hook 时，就会明白了。这里简单说下，只有真正的 hook 才会放到链表上，而某个 hook 的具体操作，如多次执行 setState()，则会放到 hoo.queue 的属性上。
+这里到时候当我们了解 useState()这个 hook 时，就会明白了。这里简单说下，只有真正的 hook 才会放到链表上，而某个 hook 的具体操作，如多次执行 setState()，则会放到 hook.queue 的属性上。
 
 ## 5. hooks 的更新
 
 我们在初始节点已经把所有的 hooks 都挂载在链表中了，那更新时，hooks 是怎么更新的呢？
 
-在更新阶段，所有的 hooks 都会进入到 update 节点，比如 useState()内部会执行 updateState()，useEffect()内部会执行 updateEffect()等。那这些 hooks 的 update 阶段执行的函数里，都会执行函数 updateWorkInProgressHook()。
+在更新阶段，所有的 hooks 都会进入到 update 阶段，比如 useState()内部会执行 updateState()，useEffect()内部会执行 updateEffect()等。二这些 hooks 的 update 阶段执行的函数里，都会执行函数 updateWorkInProgressHook()。
 
 updateWorkInProgressHook()函数的作用，就是从 hooks 的链表中获取到当前位置，上次渲染后和本次将要渲染的两个 hook 节点：
 
@@ -330,7 +330,7 @@ function updateWorkInProgressHook(): Hook {
 
 ### 6.2 hook 为什么只能在函数组件顶层进行声明
 
-因为这些所有的节点挂载的顺序，就是函数组件里执行所有 hooks 的顺序。在二次渲染时，也会按照既定的顺序来执行，那么再次执行 hook 的顺序就是第一次挂载节点的顺序是一样的。
+这些 hooks 的调用顺序，就是他们挂载在链表上的顺序。在二次渲染时，也会按照挂载的顺序来执行，那么再次执行 hook 的顺序就是第一次挂载节点的顺序是一样的。
 
 这就正好说明了一个问题：hook 为什么只能在函数组件顶层进行声明。
 

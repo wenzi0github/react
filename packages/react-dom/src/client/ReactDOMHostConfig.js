@@ -375,6 +375,11 @@ export function createTextInstance(
   return textNode;
 }
 
+/**
+ * 根据事件的类型，获取当前的优先级
+ * 若没有触发的事件（比如初始渲染时），则返回默认的优先级，即16
+ * @returns {number}
+ */
 export function getCurrentEventPriority(): * {
   const currentEvent = window.event;
   if (currentEvent === undefined) {

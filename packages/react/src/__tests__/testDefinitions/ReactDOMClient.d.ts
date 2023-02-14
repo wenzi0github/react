@@ -12,7 +12,7 @@
  * just helpers for the unit test.
  */
 
-declare module 'react-dom/client' {
+declare module 'react-dom/client1' {
   export function createRoot(container : any, options?: any) : any
   export function hydrateRoot(container : any, children: any, options?: any) : any
 }
