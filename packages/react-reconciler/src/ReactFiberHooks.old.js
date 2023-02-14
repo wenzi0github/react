@@ -848,7 +848,6 @@ function updateReducer<S, I, A>(
 
   // console.log('updateReducer', hook, queue, reducer);
   console.log('hook baseState and memoizedState', hook.baseState, hook.memoizedState);
-  console.log('reducer', reducer);
 
   if (queue === null) {
     throw new Error(
@@ -2500,7 +2499,7 @@ function dispatchSetState<S, A>(
   }
 
   const lane = requestUpdateLane(fiber);
-  console.log('%cfiber lane', 'background:yellow', lane, fiber.lanes, fiber.alternate, fiber.alternate?.lanes);
+  console.log('%cfiber lane', 'background:yellow', lane, fiber.lanes, fiber.alternate?.lanes);
 
   const update: Update<S, A> = {
     lane,
