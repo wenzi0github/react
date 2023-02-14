@@ -70,6 +70,10 @@ const App = () => {
 
 ### useState 的传参方式，有什么区别？
 
+### 为什么在本地开发时，组件会渲染两次？
+
+[issues#2](https://github.com/wenzi0github/react/issues/2)
+
 ## 2. 源码层面上
 
 这部分考察的就更有深度一些了，多多少少得了解一些源码，才能明白其中的缘由，比如 React 的 diff 对比，循环中 key 的作用等。
