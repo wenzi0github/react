@@ -93,7 +93,57 @@ useCallback 和 useMemo 可以用来缓存函数和变量，提高性能，减�
 
 主要是为了避免重新生成的函数，会导致其他 hook 或组件的不必要刷新。
 
+useMemo 用来缓存函数执行的结果。如每次渲染时都要执行一段很复杂的运算，或者一个变量需要依赖另一个变量的运算结果，就都可以使用 useMemo()。
+
+关于 useCallback 和 useMemo 更具体的用法，可参考文章：[React18 源码解析之 useCallback 和 useMemo](https://www.xiabingbao.com/post/react/react-usecallback-usememo-rjp9zn.html)。
+
 ### useState 的传参方式，有什么区别？
+
+useState()的传参有两种方式：纯数据和回调函数。这两者在初始化时，除了传入方式不同，没啥区别。但在调用时，不同的调用方式和所在环境，输出的结果也是不一样的。
+
+如：
+
+```javascript
+const App = () => {
+  const [count, setCount] = useState(0);
+
+  const handleParamClick = () => {
+    setCount(count + 1);
+    setCount(count + 1);
+    setCount(count + 1);
+  };
+
+  const handleCbClick = () => {
+    setCount(count => count + 1);
+    setCount(count => count + 1);
+    setCount(count => count + 1);
+  };
+};
+```
+
+上面的两种传入方式，最后得到的 count 结果是不一样的。为什么呢？因为在以数据的格式传参时，这 3 个使用的是同一个 count 变量，数值是一样的。相当于`setCount(0 + 1)`，调用了 3 次；但以回调函数的传参方式，React 则一般地会直接该回调函数，然后得到最新结果并存储到 React 内部，下次使用时就是最新的了。注意：这个最新值是保存在 React 内部的，外部的 count 并不会马上更新，只有在下次渲染后才会更新。
+
+还有，在定时器中，两者得到的结果也是不一样的：
+
+```javascript
+const App = () => {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCount(count + 1);
+    }, 500);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCount(count => count + 1);
+    }, 500);
+    return () => clearInterval(timer);
+  }, []);
+};
+```
 
 ### 为什么在本地开发时，组件会渲染两次？
 

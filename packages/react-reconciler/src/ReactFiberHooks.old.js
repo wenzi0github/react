@@ -2526,12 +2526,7 @@ function dispatchSetState<S, A>(
    * 当前 action 要执行的优先级，就是触发当前fiber更新更新的优先级
    */
   const lane = requestUpdateLane(fiber);
-<<<<<<< HEAD
   console.log('%cfiber lane', 'background:yellow', lane, fiber.lanes, fiber.alternate?.lanes);
-=======
-  console.log(action, lane);
-  // console.log('%cfiber lane', 'background:yellow', lane, fiber.lanes, fiber.alternate?.lanes);
->>>>>>> d3a1fdf0ce679e084dea5d5b14ea90b6499fc194
 
   /**
    * 将 action 操作封装成一个 update节点，用于后续构建链表使用
