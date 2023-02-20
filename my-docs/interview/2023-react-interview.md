@@ -149,6 +149,10 @@ const App = () => {
 
 [issues#2](https://github.com/wenzi0github/react/issues/2)
 
+在 React.StrictMode 模式下，如果用了 useState,usesMemo,useReducer 之类的 Hook，React 会故意渲染两次，为的就是将一些不容易发现的错误容易暴露出来，同时 React.StrictMode 在正式环境中不会重复渲染。
+
+也就是在测试环境的严格模式下，才会渲染两次。
+
 ## 2. 源码层面上
 
 这部分考察的就更有深度一些了，多多少少得了解一些源码，才能明白其中的缘由，比如 React 的 diff 对比，循环中 key 的作用等。
