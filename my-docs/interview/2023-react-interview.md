@@ -153,6 +153,103 @@ const App = () => {
 
 也就是在测试环境的严格模式下，才会渲染两次。
 
+### 如何实现组件的懒加载
+
+从 16.6.0 开始，React 提供了 lazy 和 Suspense 来实现懒加载。
+
+```javascript
+import React, { lazy, Suspense } from 'react';
+const OtherComponent = lazy(() => import('./OtherComponent'));
+
+function MyComponent() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <OtherComponent />
+    </Suspense>
+  );
+}
+```
+
+属性`fallback`表示在加载组件前，渲染的内容。
+
+### 如何实现一个定时器的 hook
+
+若在定时器内直接使用 React 的代码，可能会收到意想不到的结果。如我们想实现一个每 1 秒加 1 的定时器：
+
+```javascript
+const App = () => {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCount(count + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return <div className="App">{count}</div>;
+};
+```
+
+可以看到，coun 从 0 变成 1 以后，就再也不变了。为什么会这样？
+
+![count的作用域](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/164561fc1e704de4a9909208205e80d6~tplv-k3u1fbpfcp-zoom-in-crop-mark:4536:0:0:0.awebp?)
+
+尽管由于定时器的存在，组件始终会一直重新渲染，但定时器的回调函数是挂载期间定义的，所以它的闭包永远是对挂载时 Counter 作用域的引用，故 count 永远不会超过 1。
+
+针对这个单一的 hook 调用，还比较好解决，例如可以监听 count 的变化，或者通过 useState 的 callback 传参方式。
+
+```javascript
+const App = () => {
+  const [count, setCount] = useState(0);
+
+  // 监听 count 的变化，不过这里将定时器改成了 setTimeout
+  // 即使不修改，setInterval()的timer也会在每次渲染时被清除掉，
+  // 然后重新启动一个新的定时器
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCount(count + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [count]);
+
+  // 以回调的方式
+  // 回调的方式，会计算回调的结果，然后作为下次更新的初始值
+  // 详情可见： https://www.xiabingbao.com/post/react/react-usestate-rn5bc0.html#5.+updateReducer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCount(count => count + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return <div className="App">{count}</div>;
+};
+```
+
+当然还有别的方式也可以实现 count 的更新。那要是调用更多的 hook，或者更复杂的代码，该怎么办呢？这里我们可以封装一个新的 hook 来使用：
+
+```javascript
+// https://overreacted.io/zh-hans/making-setinterval-declarative-with-react-hooks/
+const useInterval = (callback: () => void, delay: number | null): void => {
+  const savedCallback = useRef(callback);
+
+  useEffect(() => {
+    savedCallback.current = callback;
+  });
+
+  useEffect(() => {
+    function tick() {
+      savedCallback.current();
+    }
+    if (delay !== null) {
+      const id = setInterval(tick, delay);
+      return () => clearInterval(id);
+    }
+  }, [delay]);
+};
+```
+
 ## 2. 源码层面上
 
 这部分考察的就更有深度一些了，多多少少得了解一些源码，才能明白其中的缘由，比如 React 的 diff 对比，循环中 key 的作用等。
@@ -160,6 +257,18 @@ const App = () => {
 ### 真实 dom 和虚拟 dom，谁快？
 
 ### 什么是合成事件，与原生事件有什么区别？
+
+### key 的作用是什么？
+
+### 多次执行 useState()，会触发多次更新吗？
+
+### 基于 React 框架的特点，可以有哪些优化措施？
+
+1. 使用 React.lazy 和 Suspense 将页面设置为懒加载，避免 js 文件过大；
+2. 使用 SSR 同构直出技术，提高首屏的渲染速度；
+3. 使用 useCallback 和 useMemo 缓存函数或变量；使用 React.memo 缓存组件；
+4. 尽量调整样式或 className 的变动，减少 jsx 元素上的变动，尽量使用与元素相关的字段作为 key，可以减少 diff 的时间（React 会尽量复用之前的节点，若 jsx 元素发生变动，就需要重新创建节点）；
+5. 对于不需要产生页面变动的数据，可以放到 useRef()中；
 
 ## 3. 周边生态
 
