@@ -68,7 +68,16 @@ const App = () => {
 
 ### 高阶组件（HOC）？
 
-通过参数接收一个组件，然后执行一定的逻辑后，再返回新的函数组件。
+### 高阶组件？
+
+高阶组件通过包裹（wrapped）被传入的 React 组件，经过一系列处理，最终返回一个相对增强（enhanced）的 React 组件，供其他组件调用。
+
+作用：
+
+1. 复用逻辑：高阶组件更像是一个加工 react 组件的工厂，批量对原有组件进行加工，包装处理。我们可以根据业务需求定制化专属的 HOC,这样可以解决复用逻辑。
+2. 强化 props：这个是 HOC 最常用的用法之一，高阶组件返回的组件，可以劫持上一层传过来的 props,然后混入新的 props,来增强组件的功能。代表作 react-router 中的 withRouter。
+3. 赋能组件：HOC 有一项独特的特性，就是可以给被 HOC 包裹的业务组件，提供一些拓展功能，比如说额外的生命周期，额外的事件，但是这种 HOC，可能需要和业务组件紧密结合。典型案例 react-keepalive-router 中的 keepaliveLifeCycle 就是通过 HOC 方式，给业务组件增加了额外的生命周期。
+4. 控制渲染：劫持渲染是 hoc 一个特性，在 wrapComponent 包装组件中，可以对原来的组件，进行条件渲染，节流渲染，懒加载等功能，后面会详细讲解，典型代表做 react-redux 中 connect 和 dva 中 dynamic 组件懒加载。
 
 参考：[react 进阶」一文吃透 React 高阶组件(HOC)](https://juejin.cn/post/6940422320427106335)
 
@@ -95,7 +104,7 @@ useCallback 和 useMemo 可以用来缓存函数和变量，提高性能，减�
 
 useMemo 用来缓存函数执行的结果。如每次渲染时都要执行一段很复杂的运算，或者一个变量需要依赖另一个变量的运算结果，就都可以使用 useMemo()。
 
-关于 useCallback 和 useMemo 更具体的用法，可参考文章：[React18 源码解析之 useCallback 和 useMemo](https://www.xiabingbao.com/post/react/react-usecallback-usememo-rjp9zn.html)。
+参考文章：[React18 源码解析之 useCallback 和 useMemo](https://www.xiabingbao.com/post/react/react-usecallback-usememo-rjp9zn.html)。
 
 ### useState 的传参方式，有什么区别？
 
@@ -250,6 +259,29 @@ const useInterval = (callback: () => void, delay: number | null): void => {
 };
 ```
 
+### useEffect()的清除机制是什么？在什么时候执行？
+
+useEffect(callback)的回调函数里，若有返回的函数，这是 effect 可选的清除机制。每个 effect 都可以返回一个清除函数。
+
+React 何时清除 effect？ React 会在组件卸载的时候执行清除操作。同时，若组件产生了更新，会先执行上一个的清除函数，然后再运行下一个 effect。如
+
+```javascript
+// 运行第一个 effect
+
+// 产生更新时
+// 清除上一个 effect
+// 运行下一个 effect
+
+// 产生更新时
+// 清除上一个 effect
+// 运行下一个 effect
+
+// 组件卸载时
+// 清除最后一个 effect
+```
+
+参考：[为什么每次更新的时候都要运行 Effect](https://zh-hans.reactjs.org/docs/hooks-effect.html#explanation-why-effects-run-on-each-update)
+
 ## 2. 源码层面上
 
 这部分考察的就更有深度一些了，多多少少得了解一些源码，才能明白其中的缘由，比如 React 的 diff 对比，循环中 key 的作用等。
@@ -292,6 +324,20 @@ key 帮助 React 识别哪些元素改变了，比如被添加或删除。因此
 
 参考：[直接修改 state 的值，会怎样？](https://www.xiabingbao.com/post/react/react-usestate-rn5bc0.html#6.3+%E7%9B%B4%E6%8E%A5%E4%BF%AE%E6%94%B9+state+%E7%9A%84%E5%80%BC%EF%BC%8C%E4%BC%9A%E6%80%8E%E6%A0%B7%EF%BC%9F)
 
+### React 的 diff 过程
+
+1. React 只对比当前层级的节点，不跨层级进行比较；
+2. 根据不同的节点类型，如函数组件节点、类组件节点、普通 fiber 节点、数组节点等，进入不同的处理函数；
+3. 前后两个 fiber 节点进行对比，若 type 不一样，直接舍弃掉旧的 fiber 节点，创建新的 fiber 节点；若 key 不一样，则需要根据情况判断，若是单个元素，则直接舍弃掉，创建新的 fiber 节点；若是数字型的元素，则查找是否移动了位置，若没找到，则创建新的节点；若 key 和 type 都一样，则接着往下递归；
+4. 若是单个 fiber 节点，则直接返回；若是并列多个元素的 fiber 节点，这里会形成单向链表，然后返回头指针（该链表最前面的那个 fiber 节点）；
+
+通过上面的 diff 对比过程，我们也可以看到，当组件产生比较大的变更时，React 需要做更多的动作，来构建出新的 fiber 树，因此我们在开发过程中，若从性能优化的角度考虑，尤其要注意的是：
+
+1. 节点不要产生大量的越级操作：因为 React 是只进行同层节点的对比，若同一个位置的子节点产生了比较大的变动，则只会舍弃掉之前的 fiber 节点，从而执行创建新 fiber 节点的操作；React 并不会把之前的 fiber 节点移动到另一个位置；相应的，之前的 jsx 节点移动到另一个位置后，在进行前后对比后，同样会执行更多的创建操作；
+2. 不修改节点的 key 和 type 类型，如使用随机数做为列表的 key，或从 div 标签改成 p 标签等操作，在 diff 对比过程中，都会直接舍弃掉之前的 fiber 节点及所有的子节点（即使子节点没有变动），然后重新创建出新的 fiber 节点；
+
+参考：[React18 源码解析之 reconcileChildren 生成 fiber 的过程](https://www.xiabingbao.com/post/react/reconcile-children-fiber-riezuz.html)
+
 ### 基于 React 框架的特点，可以有哪些优化措施？
 
 1. 使用 React.lazy 和 Suspense 将页面设置为懒加载，避免 js 文件过大；
@@ -300,6 +346,49 @@ key 帮助 React 识别哪些元素改变了，比如被添加或删除。因此
 4. 尽量调整样式或 className 的变动，减少 jsx 元素上的变动，尽量使用与元素相关的字段作为 key，可以减少 diff 的时间（React 会尽量复用之前的节点，若 jsx 元素发生变动，就需要重新创建节点）；
 5. 对于不需要产生页面变动的数据，可以放到 useRef()中；
 
+### React.Children.map 和 js 的 map 有什么区别？
+
+JavaScript 中的 map 不会对为 null 或者 undefined 的数据进行处理，而 React.Children.map 中的 map 可以处理 React.Children 为 null 或者 undefined 的情况。
+
 ## 3. 周边生态
 
 这部分主要考察 React 周边生态配套的了解，如状态管理库 redux、mobx，路由组件 react-router-dom 等。
+
+### react-router 和 react-router-dom 的有什么区别？
+
+#### api 方面
+
+React-router： 提供了路由的核心 api。如 Router、Route、Switch 等，但没有提供有关 dom 操作进行路由跳转的 api；
+React-router-dom： 提供了 BrowserRouter、Route、Link 等 api，可以通过 dom 操作触发事件控制路由。
+Link 组件，会渲染一个 a 标签；BrowserRouter 和 HashRouter 组件，前者使用 pushState 和 popState 事件构建路由，后者使用 hash 和 hashchange 事件构建路由。
+
+#### 使用区别
+
+react-router-dom 在 react-router 的基础上扩展了可操作 dom 的 api。 Swtich 和 Route 都是从 react-router 中导入了相应的组件并重新导出，没做什么特殊处理。
+react-router-dom 中 package.json 依赖中存在对 react-router 的依赖，故此，不需要额外安装 react-router。
+
+### Redux 遵循的三个原则是什么？
+
+1. 单一事实来源：整个应用的状态存储在单个 store 中的对象/状态树里。单一状态树可以更容易地跟踪随时间的变化，并调试或检查应用程序。
+2. 状态是只读的：改变状态的唯一方法是去触发一个动作。动作是描述变化的普通 JS 对象。就像 state 是数据的最小表示一样，该操作是对数据更改的最小表示。
+3. 使用纯函数进行更改：为了指定状态树如何通过操作进行转换，你需要纯函数。纯函数是那些返回值仅取决于其参数值的函数。
+
+### 你对“单一事实来源”有什么理解？
+
+Redux 使用 “Store” 将程序的整个状态存储在同一个地方。因此所有组件的状态都存储在 Store 中，并且它们从 Store 本身接收更新。单一状态树可以更容易地跟踪随时间的变化，并调试或检查程序。
+
+### Redux 有哪些优点？
+
+Redux 的优点如下：
+
+- 结果的可预测性 - 由于总是存在一个真实来源，即 store ，因此不存在如何将当前状态与动作和应用的其他部分同步的问题。
+- 可维护性 - 代码变得更容易维护，具有可预测的结果和严格的结构。
+- 服务器端渲染 - 你只需将服务器上创建的 store 传到客户端即可。这对初始渲染非常有用，并且可以优化应用性能，从而提供更好的用户体验。
+- 开发人员工具 - 从操作到状态更改，开发人员可以实时跟踪应用中发生的所有事情。
+- 社区和生态系统 - Redux 背后有一个巨大的社区，这使得它更加迷人。一个由才华横溢的人组成的大型社区为库的改进做出了贡献，并开发了各种应用。
+- 易于测试 - Redux 的代码主要是小巧、纯粹和独立的功能。这使代码可测试且独立。
+- 组织 - Redux 准确地说明了代码的组织方式，这使得代码在团队使用时更加一致和简单。
+
+## 4. 总结
+
+React 涉及到的相关知识点非常多，我也会经常更新的。
