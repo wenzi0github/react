@@ -674,6 +674,16 @@ function App() {
 
 虽然 props 的变动，会导致组件的重新刷新，但 useState()中的数据并不会发生变动，即使 useState()用了 props 中的数据作为初始值。这是因为 state 值的变动，只受 dispatch() 的影响。
 
+对于某组件多次调用，又想在同一次渲染的组件内的 key 保持不变时，如 swr 请求中的 key，可以利用这个特点来实现：
+
+```javascript
+let globalIndex = 0;
+
+function App() {
+  const [id] = useState(globalIndex++);
+}
+```
+
 若想在 props 变动时，重新调整 state 的值，可以用 useEffect() 来监听 props 的变动：
 
 ```javascript
