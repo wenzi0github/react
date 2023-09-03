@@ -216,6 +216,9 @@ export function propagateContextChange<T>(
   }
 }
 
+/**
+ * 查找当前 <Provider /> 子组件中，所有用到了 context 的组件，并将其标记为待更新
+ */
 function propagateContextChange_eager<T>(
   workInProgress: Fiber,
   context: ReactContext<T>,
@@ -233,14 +236,25 @@ function propagateContextChange_eager<T>(
   while (fiber !== null) {
     let nextFiber;
 
+    /**
+     * 每次调用 useContext(context) 时，都会将使用的 context，放到 fiber 节点的 dependencies 属性上。
+     * 同样的，若该 fiber 节点有 dependencies 属性，则必然至少挂载了一个 context，然后我们在这个链表上查
+     * 找对比传过来的 context，若能找得到，则将该组件标记为待更新；
+     */
     // Visit this fiber.
     const list = fiber.dependencies;
     if (list !== null) {
       nextFiber = fiber.child;
 
+      /**
+       * 从 context 链表的第1个开始匹配，匹配到了则标记
+       */
       let dependency = list.firstContext;
       while (dependency !== null) {
         // Check if the context matches.
+        /**
+         * 从第1个 context 开始查找，若能匹配上
+         */
         if (dependency.context === context) {
           // Match! Schedule an update on this fiber.
           if (fiber.tag === ClassComponent) {
@@ -271,6 +285,7 @@ function propagateContextChange_eager<T>(
             }
           }
 
+          // 设置该 fiber 的更新优先级
           fiber.lanes = mergeLanes(fiber.lanes, renderLanes);
           const alternate = fiber.alternate;
           if (alternate !== null) {
@@ -289,6 +304,7 @@ function propagateContextChange_eager<T>(
           // dependency list.
           break;
         }
+        // 一直在单链表中查找 context，直到找到或者到结尾
         dependency = dependency.next;
       }
     } else if (fiber.tag === ContextProvider) {
@@ -298,6 +314,7 @@ function propagateContextChange_eager<T>(
       // If a dehydrated suspense boundary is in this subtree, we don't know
       // if it will have any context consumers in it. The best we can do is
       // mark it as having updates.
+      // 这里主要是同构支出渲染的方式中出现，暂时不考虑
       const parentSuspense = fiber.return;
 
       if (parentSuspense === null) {
@@ -326,6 +343,9 @@ function propagateContextChange_eager<T>(
       nextFiber = fiber.child;
     }
 
+    /**
+     * fiber节点的遍历顺序，先子节点，然后兄弟节点，最后回到父级节点
+     */
     if (nextFiber !== null) {
       // Set the return pointer of the child to the work-in-progress fiber.
       nextFiber.return = fiber;
@@ -335,6 +355,7 @@ function propagateContextChange_eager<T>(
       while (nextFiber !== null) {
         if (nextFiber === workInProgress) {
           // We're back to the root of this subtree. Exit.
+          // 已经遍历完当前 workInProgress 下所有的子节点，直接退出
           nextFiber = null;
           break;
         }
@@ -649,6 +670,13 @@ export function prepareToReadContext(
   }
 }
 
+/**
+ * 每次调用 useContext() 都会把 context 挂载到 dependencies 单向链表上；
+ * 但每次执行完，在 commit 阶段，都会把 dependencies 清空，并不会在函数组
+ * 件多次执行，造成重复添加的情况；
+ * @param context 传入的指定的 context
+ * @returns {T} 当前 context 的最新值
+ */
 export function readContext<T>(context: ReactContext<T>): T {
   if (__DEV__) {
     // This warning would fire if you read context inside a Hook like useMemo.

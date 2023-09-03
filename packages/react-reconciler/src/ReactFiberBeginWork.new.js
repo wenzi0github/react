@@ -3166,6 +3166,11 @@ function updatePortalComponent(
 
 let hasWarnedAboutUsingNoValuePropOnContextProvider = false;
 
+/**
+ * 获取到 value 的新值和旧值，通过 Object.is() 对比是否发生了变化，
+ * 1. 若没有变化，则chidlren一样，则提前结束；
+ * 2. 若有变化，
+ */
 function updateContextProvider(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -3195,6 +3200,10 @@ function updateContextProvider(
     }
   }
 
+  /**
+   * 目前context中存储的值存放到另一个栈中，
+   * 然后再将 newValue 存储到 context._currentValue 上
+   */
   pushProvider(workInProgress, context, newValue);
 
   if (enableLazyContextPropagation) {
@@ -3205,6 +3214,8 @@ function updateContextProvider(
   } else {
     if (oldProps !== null) {
       const oldValue = oldProps.value;
+
+      // 通过 Object.is() 来比较前后两个value是否发生了变化
       if (is(oldValue, newValue)) {
         // No change. Bailout early if children are the same.
         if (
@@ -3220,12 +3231,25 @@ function updateContextProvider(
       } else {
         // The context value changed. Search for matching consumers and schedule
         // them to update.
+        /**
+         * 若 value 产生了变化，则查找所有使用 useContext() 的消费组件，将其标记为可更新；
+         * 消费组件主要有两种，<Consumer /> 和 使用 useContext() 的组件；
+         * <Consumer /> 每次执行到该组件时，都会重新执行，不用进行标记；
+         * 而使用 useContext() 的组件，可能使用了多个 context，则需要判断该组件中使用
+         * 了这各产生更新的 context ，若能匹配上，则将该组件标记为可更新；
+         * 这里只匹配使用了 useContext() 的 hook 的组件；
+         */
         propagateContextChange(workInProgress, context, renderLanes);
       }
     }
   }
 
   const newChildren = newProps.children;
+
+  /**
+   * 渲染后续的jsx结构，关于该方法的详细解读，可以参考下面的文章
+   * https://www.xiabingbao.com/post/react/reconcile-children-fiber-riezuz.html
+   */
   reconcileChildren(current, workInProgress, newChildren, renderLanes);
   return workInProgress.child;
 }

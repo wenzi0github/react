@@ -3419,6 +3419,9 @@ function updateContextConsumer(
     newChildren = render(newValue);
     setIsRendering(false);
   } else {
+    /**
+     * 每次都直接传入最新的value，然后执行
+     */
     newChildren = render(newValue);
   }
   if (enableSchedulingProfiler) {

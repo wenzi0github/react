@@ -138,3 +138,5 @@ function areHookInputsEqual(nextDeps: Array<mixed>, prevDeps: Array<mixed> | nul
 ## 3. 总结
 
 所有有依赖项的 hooks，在对比前后依赖项是否发生变动时，都是用 areHookInputsEqual() 来进行对比的。
+
+有很多同学会把 json 结构或者 object 类型的变量放到依赖项中，这就会存在一个问题，每次在进行依赖项对比时，两个 object 类型的变量都是不相等的，不管他们之间的 key 或者 value 是否发生变化，每次都会执行 hook 中的回调函数。因此，为了避免这种情况，我们不建议直接把 object 类型的变量放到依赖项中。若是依赖 key 都是已知的，这里建议是把每个 key 都拆分出来，分别放到依赖项中；若 key 是不明确的，或者动态变化的，可以先对 key 进行字典排序，然后再进行依赖项设置。
